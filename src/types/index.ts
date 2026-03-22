@@ -1,4 +1,4 @@
-export type FeedSource = 'zhihu-recommend' | 'zhihu-follow' | 'twitter-recommend' | 'twitter-following'
+export type FeedSource = 'zhihu-recommend' | 'zhihu-follow' | 'twitter-recommend' | 'twitter-following' | 'follow' | 'recommend'
 
 export type FeedCategory = 'follow' | 'recommend'
 

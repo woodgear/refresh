@@ -31,11 +31,29 @@ interface RawResponse {
   count: number
   items: ZhihuRawItem[] | TwitterRawItem[]
   fetchedAt?: number
+  sources?: number
 }
 
 export interface FeedResult {
   messages: Message[]
   fetchedAt: number | null
+  sources: number
+}
+
+export interface SourceMeta {
+  files: string[]
+  fileCount: number
+  totalItems: number
+  uniqueItems: number
+  latestFetchedAt: string | null
+  lastScannedAt: string
+}
+
+export interface MetaResponse {
+  lastScanTime: string
+  scanInterval: number
+  sources: Record<string, SourceMeta | undefined>
+  files: { file: string; size: number; mtime: string }[]
 }
 
 export async function fetchFeed(source: FeedSource): Promise<FeedResult> {
@@ -49,7 +67,7 @@ export async function fetchFeed(source: FeedSource): Promise<FeedResult> {
   const data: RawResponse = await response.json()
 
   if (!data.items || !Array.isArray(data.items)) {
-    return { messages: [], fetchedAt: data.fetchedAt || null }
+    return { messages: [], fetchedAt: data.fetchedAt || null, sources: data.sources || 0 }
   }
 
   const messages = data.items.map((item) => {
@@ -82,5 +100,13 @@ export async function fetchFeed(source: FeedSource): Promise<FeedResult> {
     }
   })
 
-  return { messages, fetchedAt: data.fetchedAt || null }
+  return { messages, fetchedAt: data.fetchedAt || null, sources: data.sources || 0 }
+}
+
+export async function fetchMeta(): Promise<MetaResponse> {
+  const response = await fetch(`${API_BASE}/meta`)
+  if (!response.ok) {
+    throw new Error(`Failed to fetch meta: ${response.statusText}`)
+  }
+  return response.json()
 }

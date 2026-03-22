@@ -4,7 +4,7 @@ import { Heart, MessageCircle, Repeat2, Eye, ArrowUp, Clock } from 'lucide-react
 
 interface MessageCardProps {
   message: Message
-  fetchedAt?: number | null
+  fetchedAt?: string | number | null
 }
 
 function isTwitter(msg: Message): msg is TwitterMessage {
@@ -21,9 +21,12 @@ function formatNumber(n: number): string {
   return String(n)
 }
 
-function formatFetchedAt(timestamp: number | null | undefined): string {
+function formatFetchedAt(timestamp: string | number | null | undefined): string {
   if (!timestamp) return ''
-  const date = new Date(timestamp * 1000)
+  // 如果是字符串形式的 Unix 时间戳，转换为数字
+  const ts = typeof timestamp === 'string' ? parseInt(timestamp, 10) : timestamp
+  if (isNaN(ts)) return ''
+  const date = new Date(ts * 1000)
   const month = (date.getMonth() + 1).toString().padStart(2, '0')
   const day = date.getDate().toString().padStart(2, '0')
   const hours = date.getHours().toString().padStart(2, '0')
@@ -40,7 +43,7 @@ export function MessageCard({ message, fetchedAt }: MessageCardProps) {
   )
 }
 
-function TwitterCardContent({ message, fetchedAt }: { message: TwitterMessage; fetchedAt?: number | null }) {
+function TwitterCardContent({ message, fetchedAt }: { message: TwitterMessage; fetchedAt?: string | number | null }) {
   return (
     <>
       <CardHeader className="pb-2">
@@ -80,7 +83,7 @@ function TwitterCardContent({ message, fetchedAt }: { message: TwitterMessage; f
   )
 }
 
-function ZhihuCardContent({ message, fetchedAt }: { message: ZhihuMessage; fetchedAt?: number | null }) {
+function ZhihuCardContent({ message, fetchedAt }: { message: ZhihuMessage; fetchedAt?: string | number | null }) {
   return (
     <>
       <CardHeader className="pb-2">
