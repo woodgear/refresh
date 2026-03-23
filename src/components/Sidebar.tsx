@@ -1,13 +1,10 @@
 import { useUIStore } from '@/stores/uiStore'
+import { useItemStore } from '@/stores/itemStore'
 import { cn } from '@/lib/utils'
 import { FEED_SOURCES, type FeedCategory, type FeedSource } from '@/types'
-import { User, Sparkles, ChevronRight, Database, Clock, Files, RefreshCw, X } from 'lucide-react'
+import { User, Sparkles, ChevronRight, Database, Clock, Files, RefreshCw, X, Settings } from 'lucide-react'
 import { trpc } from '@/trpc/client'
 import { useState, useRef } from 'react'
-
-interface SidebarProps {
-  onSourceChange?: (source: FeedSource) => void
-}
 
 interface LogEntry {
   id: number
@@ -15,27 +12,24 @@ interface LogEntry {
   type: 'log' | 'error'
 }
 
-export function Sidebar({ onSourceChange }: SidebarProps) {
+export function Sidebar() {
   const activeSource = useUIStore((s) => s.activeSource)
-  const setActiveCategory = useUIStore((s) => s.setActiveCategory)
   const setActiveSource = useUIStore((s) => s.setActiveSource)
+  const refresh = useItemStore((s) => s.refresh)
   const [isFetching, setIsFetching] = useState(false)
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [showLogs, setShowLogs] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  const [fetchCount, setFetchCount] = useState(50)
   const logIdRef = useRef(0)
   const logContainerRef = useRef<HTMLDivElement>(null)
 
   const meta = trpc.meta.useQuery()
   const utils = trpc.useUtils()
 
-  const handleCategoryClick = (category: FeedCategory) => {
-    setActiveCategory(category)
-    onSourceChange?.(category)
-  }
-
   const handleSourceChange = (source: FeedSource) => {
     setActiveSource(source)
-    onSourceChange?.(source)
+    refresh(source)
   }
 
   const addLog = (message: string, type: 'log' | 'error' = 'log') => {
@@ -51,10 +45,10 @@ export function Sidebar({ onSourceChange }: SidebarProps) {
     setIsFetching(true)
     setLogs([])
     setShowLogs(true)
-    addLog('Starting fetch...')
+    addLog(`Starting fetch (count: ${fetchCount})...`)
 
     try {
-      const eventSource = new EventSource('/api/fetch')
+      const eventSource = new EventSource(`/api/fetch?count=${fetchCount}`)
 
       eventSource.addEventListener('log', (e: MessageEvent) => {
         addLog(e.data)
@@ -108,11 +102,11 @@ export function Sidebar({ onSourceChange }: SidebarProps) {
         {categories.map((category) => (
           <div key={category.id} className="space-y-1">
             <button
-              onClick={() => handleCategoryClick(category.id)}
+              onClick={() => handleSourceChange(category.id as FeedSource)}
               className={cn(
                 "w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors",
                 "hover:bg-accent hover:text-accent-foreground",
-                (activeSource === category.id || FEED_SOURCES[category.id].some(s => s.id === activeSource)) &&
+                (activeSource === category.id || FEED_SOURCES[category.id].some((s: { id: string }) => s.id === activeSource)) &&
                   "bg-accent text-accent-foreground font-medium"
               )}
             >
@@ -120,10 +114,10 @@ export function Sidebar({ onSourceChange }: SidebarProps) {
               {category.label}
             </button>
             <div className="ml-4 space-y-0.5">
-              {FEED_SOURCES[category.id].map((source) => (
+              {FEED_SOURCES[category.id].map((source: { id: string; label: string }) => (
                 <button
                   key={source.id}
-                  onClick={() => handleSourceChange(source.id)}
+                  onClick={() => handleSourceChange(source.id as FeedSource)}
                   className={cn(
                     "w-full flex items-center gap-1 px-3 py-1.5 text-sm rounded-md transition-colors",
                     "hover:bg-accent hover:text-accent-foreground",
@@ -146,15 +140,39 @@ export function Sidebar({ onSourceChange }: SidebarProps) {
             <Clock className="h-3 w-3" />
             <span>扫描: {formatTime(meta.data?.lastScanTime)}</span>
           </div>
-          <button
-            onClick={handleFetch}
-            disabled={isFetching}
-            className="p-1 hover:bg-accent rounded transition-colors disabled:opacity-50"
-            title="Fetch new data"
-          >
-            <RefreshCw className={cn("h-3 w-3", isFetching && "animate-spin")} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setShowSettings(!showSettings)}
+              className={cn("p-1 hover:bg-accent rounded transition-colors", showSettings && "bg-accent")}
+              title="Settings"
+            >
+              <Settings className="h-3 w-3" />
+            </button>
+            <button
+              onClick={handleFetch}
+              disabled={isFetching}
+              className="p-1 hover:bg-accent rounded transition-colors disabled:opacity-50"
+              title="Fetch new data"
+            >
+              <RefreshCw className={cn("h-3 w-3", isFetching && "animate-spin")} />
+            </button>
+          </div>
         </div>
+
+        {showSettings && (
+          <div className="flex items-center gap-2 py-1">
+            <span className="shrink-0">数量:</span>
+            <input
+              type="number"
+              value={fetchCount}
+              onChange={(e) => setFetchCount(Math.min(200, Math.max(10, parseInt(e.target.value) || 50)))}
+              className="w-16 px-1 py-0.5 bg-background border rounded text-xs"
+              min={10}
+              max={200}
+            />
+          </div>
+        )}
+
         <div className="flex items-center gap-2">
           <Files className="h-3 w-3" />
           <span>文件: {totalFiles}</span>

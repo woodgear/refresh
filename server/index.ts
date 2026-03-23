@@ -23,7 +23,11 @@ app.use('/trpc/*', async (c) => {
 })
 
 // SSE endpoint for fetch with real-time logs
-app.get('/api/fetch', async () => {
+app.get('/api/fetch', async (c) => {
+  // Get count parameter from URL query
+  const countParam = c.req.query('count')
+  const count = Math.min(Math.max(parseInt(countParam || '50'), 10), 200)
+
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder()
@@ -31,16 +35,16 @@ app.get('/api/fetch', async () => {
         controller.enqueue(encoder.encode(`event: ${event}\ndata: ${data}\n\n`))
       }
 
-      send('log', 'Starting fetch...')
+      send('log', `Starting fetch (count: ${count})...`)
 
       const projectDir = join(__dirname, '..')
       const timestamp = Math.floor(Date.now() / 1000)
 
       const tasks = [
-        { name: 'zhihu-follow', cmd: 'bb-browser', args: ['site', 'zhihu/follow', '50', '--jq', '.'] },
-        { name: 'zhihu-recommend', cmd: 'bb-browser', args: ['site', 'zhihu/recommend', '50', '--jq', '.'] },
-        { name: 'twitter-following', cmd: 'bb-browser', args: ['site', 'twitter/following', '50', '--jq', '.'] },
-        { name: 'twitter-recommend', cmd: 'bb-browser', args: ['site', 'twitter/recommend', '50', '--jq', '.'] },
+        { name: 'zhihu-follow', cmd: 'bb-browser', args: ['site', 'zhihu/follow', String(count), '--jq', '.'] },
+        { name: 'zhihu-recommend', cmd: 'bb-browser', args: ['site', 'zhihu/recommend', String(count), '--jq', '.'] },
+        { name: 'twitter-following', cmd: 'bb-browser', args: ['site', 'twitter/following', String(count), '--jq', '.'] },
+        { name: 'twitter-recommend', cmd: 'bb-browser', args: ['site', 'twitter/recommend', String(count), '--jq', '.'] },
       ]
 
       for (const task of tasks) {

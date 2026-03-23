@@ -10,14 +10,14 @@
 - **框架**: React 18 + TypeScript 5.6
 - **构建工具**: Vite 5.4
 - **路由**: TanStack Router 1.59 (文件系统路由)
-- **数据获取**: TanStack Query 5.59
-- **状态管理**: Zustand 5.0
+- **数据获取**: TanStack Query 5.59 + tRPC (类型安全 API)
+- **状态管理**: Zustand 5.0 (UI 状态 + 实体缓存)
 - **样式**: Tailwind CSS 3.4 + shadcn/ui (基于 Radix UI)
 - **图标**: Lucide React
 
 ### 后端
 - **运行时**: Bun
-- **框架**: Hono
+- **框架**: Hono + tRPC (类型安全 API)
 - **端口**: 3001
 
 ## 目录结构
@@ -26,7 +26,7 @@
 radar/
 ├── src/                        # 前端源码
 │   ├── main.tsx                # React 应用入口
-│   ├── App.tsx                 # 根组件 (配置 Query + Router)
+│   ├── App.tsx                 # 根组件 (配置 Query + Router + tRPC)
 │   ├── routeTree.gen.ts        # 自动生成的路由树
 │   │
 │   ├── api/
@@ -50,16 +50,21 @@ radar/
 │   │   └── index.tsx           # 首页路由 (Feed 页面)
 │   │
 │   ├── stores/
-│   │   └── uiStore.ts          # UI 状态 (activeSource)
+│   │   ├── uiStore.ts          # UI 状态 (activeSource)
+│   │   └── itemStore.ts        # 实体缓存 + refresh action
 │   │
 │   ├── styles/
 │   │   └── globals.css         # 全局样式和 CSS 变量
+│   │
+│   ├── trpc/
+│   │   └── client.ts           # tRPC 客户端配置
 │   │
 │   └── types/
 │       └── index.ts            # 核心类型定义
 │
 ├── server/
-│   └── index.ts                # Hono API 服务器
+│   ├── index.ts                # Hono API 服务器入口
+│   └── trpc.ts                 # tRPC 路由定义 (feedList, items)
 │
 ├── data/                       # 静态数据存储
 │   ├── twitter-following-*.json
@@ -88,13 +93,13 @@ radar/
 │         __root.tsx (布局) → index.tsx (首页)                │
 ├─────────────────────────────────────────────────────────────┤
 │                   状态管理层 (State)                         │
-│     TanStack Query (服务端状态) + Zustand (UI 状态)          │
+│   Zustand: uiStore (UI状态) + itemStore (实体缓存+actions)  │
 ├─────────────────────────────────────────────────────────────┤
-│                   API 客户端层 (API)                         │
-│              api/client.ts → fetchFeed()                    │
+│                    API 层 (tRPC)                            │
+│        feedList (ID列表) + items (批量获取详情)              │
 ├─────────────────────────────────────────────────────────────┤
 │                    后端服务 (Server)                         │
-│              Hono Server (localhost:3001)                   │
+│              Hono + tRPC (localhost:3001)                   │
 ├─────────────────────────────────────────────────────────────┤
 │                      数据层 (Data)                           │
 │                 data/*.json (静态文件)                       │
@@ -131,21 +136,39 @@ interface ZhihuMessage {
 type Message = TwitterMessage | ZhihuMessage
 ```
 
-### API 端点 (`server/index.ts`)
+### tRPC 端点 (`server/trpc.ts`)
 
 | 端点 | 说明 |
 |------|------|
-| `GET /api/twitter/following` | Twitter 关注列表 |
-| `GET /api/twitter/recommend` | Twitter 推荐内容 |
-| `GET /api/zhihu/follow` | 知乎关注列表 |
-| `GET /api/zhihu/recommend` | 知乎推荐内容 |
+| `feedList({ source })` | 获取 feed 的 ID 列表（已按时间排序） |
+| `items({ ids })` | 批量获取 items 详情（全局查找，自动去重） |
+| `feed({ source })` | 兼容旧接口，返回完整数据 |
+| `meta()` | 获取数据源元信息 |
+| `refresh()` | 手动刷新缓存 |
 
-### 状态管理 (`src/stores/uiStore.ts`)
+### 状态管理 (`src/stores/`)
 
+**uiStore.ts** - UI 状态
 ```typescript
 interface UIStore {
   activeSource: FeedSource
   setActiveSource: (source: FeedSource) => void
+}
+```
+
+**itemStore.ts** - 实体缓存 + 数据获取 action
+```typescript
+interface ItemStore {
+  // State
+  items: Map<string, any>    // normalized entity cache
+  ids: string[]              // 当前显示的 ID 列表（保持顺序）
+  fetchedAt: string | null   // 最新抓取时间
+  isLoading: boolean
+  error: Error | null
+
+  // Actions
+  refresh: (sourceOrCategory: string) => Promise<void>
+  getMissingIds: (ids: string[]) => string[]
 }
 ```
 
@@ -158,28 +181,49 @@ interface UIStore {
 └─────────────┘                └──────┬──────┘
                                       │ 保存
                                       v
-┌─────────────┐     read      ┌─────────────┐
-│   前端 UI    │ <──────────── │  data/*.json │
-│             │               │  静态文件    │
-└──────┬──────┘               └─────────────┘
-       │ fetch                     ^
-       v                           │ read
-┌─────────────┐              ┌─────┴───────┐
-│ api/client  │ ──────────── │    Hono     │
-│ fetchFeed() │   HTTP       │   Server    │
-└─────────────┘              │  :3001      │
-       │                     └─────────────┘
-       v useQuery
-┌─────────────┐
-│  uiStore    │ Zustand
-│activeSource │
-└──────┬──────┘
-       │ 状态更新
-       v
-┌─────────────┐
-│ MessageCard │ 渲染消息列表
-└─────────────┘
+                              ┌─────────────┐
+                              │  data/*.json │
+                              │  静态文件    │
+                              └──────┬──────┘
+                                     │ read
+                                     v
+                              ┌─────────────┐
+                              │    Hono     │
+                              │  + tRPC     │
+                              │   :3001     │
+                              └─────────────┘
+                                     │ tRPC
+                                     v
+┌─────────────────────────────────────────────────────────────┐
+│                        前端应用                              │
+│                                                             │
+│  ┌─────────────┐   onClick   ┌──────────────────────────┐  │
+│  │   Sidebar   │ ──────────► │ itemStore.refresh()      │  │
+│  │             │             │   1. fetch IDs           │  │
+│  └─────────────┘             │   2. dedupe              │  │
+│                              │   3. bulk fetch          │  │
+│                              │   4. update store        │  │
+│                              └──────────────────────────┘  │
+│                                                             │
+│  ┌─────────────┐     subscribe     ┌──────────────────┐   │
+│  │  FeedPage   │ ◄──────────────── │    itemStore     │   │
+│  │             │                   │  - ids[]         │   │
+│  └─────────────┘                   │  - items Map     │   │
+│                                    │  - isLoading     │   │
+│                                    │  - refresh()     │   │
+│                                    └──────────────────┘   │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
 ```
+
+**数据获取流程：**
+
+1. **用户点击**: Sidebar 调用 `itemStore.refresh(source)`
+2. **获取 IDs**: `feedList` query 获取排序后的 ID 列表
+3. **去重**: 与 `itemStore.items` 对比，过滤出缺失的 IDs
+4. **批量获取**: `items` query 批量获取缺失的 items
+5. **更新 Store**: 更新 `itemStore.ids` 和 `itemStore.items`
+6. **UI 更新**: FeedPage 订阅 store，自动重渲染
 
 ## NPM Scripts
 
@@ -203,13 +247,45 @@ pnpm fetch    # 执行数据采集脚本
 ### 添加新的数据源
 
 1. 在 `src/types/index.ts` 添加新的 `FeedSource` 类型
-2. 在 `server/index.ts` 添加新的 API 端点
-3. 在 `src/api/client.ts` 添加数据转换逻辑
-4. 在 `src/components/Sidebar.tsx` 添加导航项
-5. 更新 `fetch.sh` 添加数据采集逻辑
+2. 在 `server/trpc.ts` 的 `scanAllSources()` 添加新源前缀
+3. 在 `src/components/Sidebar.tsx` 添加导航项
+4. 更新 `fetch.sh` 添加数据采集逻辑
 
 ### 添加新页面
 
 1. 在 `src/routes/` 创建新的路由文件 (如 `about.tsx`)
 2. 运行 `pnpm dev` 自动生成路由树
 3. 在 `Sidebar.tsx` 添加导航链接
+
+## 架构设计决策
+
+### 为什么用 Zustand 作为实体缓存？
+
+TanStack Query 缓存是基于 query key 的，不是基于实体 ID 的。这意味着：
+- `trpc.items.useQuery({ ids: ['1', '2'] })` 和 `trpc.items.useQuery({ ids: ['2'] })` 是两个独立的缓存条目
+- 无法自动实现"已获取的 ID 不再请求"
+
+解决方案：使用 Zustand 作为 normalized entity cache，按 ID 存储实体。
+
+### 为什么分离 feedList 和 items 端点？
+
+1. **排序**: 服务端统一按 `created_time > created_at > firstFetchedAt` 排序
+2. **缓存**: 前端可以精确控制哪些 ID 需要获取详情
+3. **按需加载**: ID 列表轻量，可以快速返回；详情按需批量获取
+
+### 为什么不用 useEffect 触发数据获取？
+
+`useEffect` 用于数据获取是反模式：
+- 副作用难以追踪和调试
+- 依赖数组容易出错
+- 不符合"事件驱动"的理念
+
+更好的方案：**事件驱动** - 用户点击时直接调用 `itemStore.refresh(source)`，状态变化自然触发 UI 更新。
+
+```typescript
+// Sidebar.tsx
+const handleSourceChange = (source: FeedSource) => {
+  setActiveSource(source)  // 更新 UI 状态
+  refresh(source)          // 触发数据获取
+}
+```
