@@ -108,6 +108,23 @@ assert_eq "0" "$(curl -s "$BASE/messages?authorSelector=category=other" | jq '.i
 curl -s -X PATCH "$BASE/messages/zhihu-8001" -d '{"labels":{"starred":"true"}}' >/dev/null
 assert_eq "true" "$(curl -s "$BASE/messages/zhihu-8001" | jq -r .metadata.labels.starred)" "PATCH message label（overlay）"
 
+log "== 已读/未读追踪与排序 =="
+assert_eq "5" "$(curl -s "$BASE/unread-counts" | jq -r .total)" "初始全未读"
+curl -s -X POST "$BASE/messages/mark-read" -d '{"names":["zhihu-8003"]}' >/dev/null
+assert_eq "4" "$(curl -s "$BASE/unread-counts" | jq -r .total)" "批量 mark-read 生效"
+assert_eq "true" "$(curl -s "$BASE/messages/zhihu-8003" | jq -r .status.read)" "read 状态可见"
+assert_eq "4" "$(curl -s "$BASE/messages?unread=true" | jq '.items | length')" "unread=true 过滤"
+# unread-first：已读的 zhihu-8003（时间最新）应沉底
+assert_eq "zhihu-8003" "$(curl -s "$BASE/messages?labelSelector=platform=zhihu&sort=unread-first" | jq -r '.items[-1].metadata.name')" "未读优先排序：已读沉底"
+assert_eq "zhihu-8003" "$(curl -s "$BASE/messages?labelSelector=platform=zhihu&sort=time" | jq -r '.items[0].metadata.name')" "时间排序不受 read 影响"
+# 取消已读（PATCH null 删 key）
+curl -s -X PATCH "$BASE/messages/zhihu-8003" -d '{"status":{"read":null,"readAt":null}}' >/dev/null
+assert_eq "5" "$(curl -s "$BASE/unread-counts" | jq -r .total)" "标回未读"
+# labelSelector 圈范围全已读
+curl -s -X POST "$BASE/messages/mark-read" -d '{"labelSelector":"platform=zhihu"}' >/dev/null
+assert_eq "2" "$(curl -s "$BASE/unread-counts" | jq -r .total)" "按 selector 全部已读"
+assert_eq "0" "$(curl -s "$BASE/unread-counts" | jq -r '.sources["zhihu-main-recommend"] // 0')" "源级未读计数归零"
+
 log "== A8(半自动): RSS 输出 =="
 RSS_CODE=$(curl -s -o "$TMPDIR/feed.xml" -w '%{http_code}' "http://localhost:${PORT}/rss/zhihu-main-recommend.xml")
 assert_eq "200" "$RSS_CODE" "RSS 200"

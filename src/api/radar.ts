@@ -38,7 +38,7 @@ export interface Message {
   kind: 'Message'
   metadata: ResourceMeta
   spec: MessageSpec
-  status: { hydrated: boolean; [k: string]: unknown }
+  status: { hydrated: boolean; read?: boolean; readAt?: string; [k: string]: unknown }
 }
 
 export interface Account {
@@ -99,15 +99,15 @@ async function send<T>(method: string, path: string, body?: unknown): Promise<T>
 
 // ---------- hooks ----------
 
-export function useMessages(source: string) {
+export function useMessages(source: string, opts?: { sort?: 'time' | 'unread-first'; unreadOnly?: boolean }) {
+  const params = new URLSearchParams()
+  if (source !== 'all') params.set('labelSelector', `source=${source}`)
+  params.set('limit', '200')
+  if (opts?.sort) params.set('sort', opts.sort)
+  if (opts?.unreadOnly) params.set('unread', 'true')
   return useQuery({
-    queryKey: ['messages', source],
-    queryFn: () =>
-      getJson<{ items: Message[] }>(
-        source === 'all'
-          ? '/api/v1/messages?limit=200'
-          : `/api/v1/messages?labelSelector=source=${source}&limit=200`,
-      ).then(r => r.items),
+    queryKey: ['messages', source, opts?.sort ?? 'time', opts?.unreadOnly ?? false],
+    queryFn: () => getJson<{ items: Message[] }>(`/api/v1/messages?${params}`).then(r => r.items),
   })
 }
 
@@ -146,6 +146,26 @@ export function useLogs(date?: string, lines = 500) {
     queryKey: ['logs', date, lines],
     queryFn: () => getJson<LogTail>(`/api/v1/logs?lines=${lines}${date ? `&date=${date}` : ''}`),
     refetchInterval: 3000,
+  })
+}
+
+export function useUnreadCounts() {
+  return useQuery({
+    queryKey: ['unread-counts'],
+    queryFn: () => getJson<{ total: number; sources: Record<string, number> }>('/api/v1/unread-counts'),
+    refetchInterval: 30_000,
+  })
+}
+
+/** 批量标记已读；names 或 labelSelector（'' = 全部）二选一 */
+export function markRead(target: { names?: string[]; labelSelector?: string }): Promise<{ marked: number }> {
+  return send('POST', '/api/v1/messages/mark-read', target)
+}
+
+/** 手动切换单条已读/未读 */
+export function setMessageRead(name: string, read: boolean): Promise<Message> {
+  return send('PATCH', `/api/v1/messages/${name}`, {
+    status: read ? { read: true, readAt: new Date().toISOString() } : { read: null, readAt: null },
   })
 }
 

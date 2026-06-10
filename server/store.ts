@@ -141,6 +141,27 @@ export async function patchOverlay(
   return entry
 }
 
+/** 批量合并多个 entry（单次读写文件），mark-read 这类批量操作用 */
+export async function patchOverlayMany(kind: OverlayKind, patches: Record<string, OverlayEntry>): Promise<void> {
+  await ensureDirs()
+  const all = await readOverlay(kind)
+  for (const [name, patch] of Object.entries(patches)) {
+    const entry = all[name] ?? {}
+    for (const section of ['labels', 'annotations', 'status'] as const) {
+      const p = patch[section]
+      if (!p) continue
+      const merged: Record<string, unknown> = { ...(entry[section] ?? {}) }
+      for (const [k, v] of Object.entries(p)) {
+        if (v === null) delete merged[k]
+        else merged[k] = v
+      }
+      entry[section] = merged as never
+    }
+    all[name] = entry
+  }
+  await atomicWrite(overlayPath(kind), JSON.stringify(all, null, 2))
+}
+
 /** 档案派生的资源 + overlay 用户态 → 完整对象。overlay 的 labels/annotations 浅覆盖，status 浅合并。 */
 export function applyOverlay<S, T extends Record<string, unknown>>(
   resource: Resource<S, T>,

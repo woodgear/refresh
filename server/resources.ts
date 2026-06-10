@@ -189,6 +189,8 @@ export interface ListMessagesOpts {
   /** 指定名称列表（保序），window 浏览用 */
   names?: string[]
   limit?: number
+  sort?: 'time' | 'unread-first'
+  unreadOnly?: boolean
 }
 
 export async function listMessages(opts: ListMessagesOpts) {
@@ -222,9 +224,32 @@ export async function listMessages(opts: ListMessagesOpts) {
       return ref !== undefined && authorRefs.has(ref)
     })
   }
-  result.sort((a, b) => (b.metadata.creationTimestamp ?? '').localeCompare(a.metadata.creationTimestamp ?? ''))
-  if (opts.limit && opts.limit > 0) result = result.slice(0, opts.limit)
-  return withOverlay('messages', result)
+  // 排序/未读过滤需要 read 状态（在 overlay 里），先合并再处理
+  let merged = await withOverlay('messages', result)
+  const isRead = (m: (typeof merged)[number]) => !!(m.status as Record<string, unknown>).read
+  if (opts.unreadOnly) merged = merged.filter(m => !isRead(m))
+  const t = (m: (typeof merged)[number]) => m.metadata.creationTimestamp ?? ''
+  merged.sort(
+    opts.sort === 'unread-first'
+      ? (a, b) => Number(isRead(a)) - Number(isRead(b)) || t(b).localeCompare(t(a))
+      : (a, b) => t(b).localeCompare(t(a)),
+  )
+  if (opts.limit && opts.limit > 0) merged = merged.slice(0, opts.limit)
+  return merged
+}
+
+/** 各源未读数（按多源归属计；total 为去重后的全局未读数） */
+export async function unreadCounts(): Promise<{ total: number; sources: Record<string, number> }> {
+  const overlay = await readOverlay('messages')
+  const sources: Record<string, number> = {}
+  let total = 0
+  for (const m of messages.values()) {
+    if ((overlay[m.metadata.name]?.status as Record<string, unknown> | undefined)?.read) continue
+    total++
+    const list = (m.metadata.annotations?.['radar/sources'] ?? m.metadata.labels?.source ?? '').split(',').filter(Boolean)
+    for (const s of list) sources[s] = (sources[s] ?? 0) + 1
+  }
+  return { total, sources }
 }
 
 export async function getMessage(name: string) {

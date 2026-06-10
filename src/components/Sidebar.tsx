@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useUIStore } from '@/stores/uiStore'
 import { cn } from '@/lib/utils'
-import { SOURCES, createRefreshWindow, useAccounts, useInvalidate, watchRefreshWindow } from '@/api/radar'
+import { SOURCES, createRefreshWindow, useAccounts, useInvalidate, useUnreadCounts, watchRefreshWindow } from '@/api/radar'
 import { Sparkles, RefreshCw, Layers, Rss, Settings } from 'lucide-react'
 
 const AUTH_DOT: Record<string, string> = {
@@ -14,6 +14,7 @@ const AUTH_DOT: Record<string, string> = {
 export function Sidebar() {
   const { activeSource, setActiveSource, view, setView } = useUIStore()
   const accounts = useAccounts()
+  const unread = useUnreadCounts()
   const invalidate = useInvalidate()
   const [refreshing, setRefreshing] = useState<Set<string>>(new Set())
   const [lastResult, setLastResult] = useState<string | null>(null)
@@ -81,6 +82,9 @@ export function Sidebar() {
         >
           <Sparkles className="h-4 w-4" />
           全部
+          {(unread.data?.total ?? 0) > 0 && (
+            <span className="ml-auto text-xs tabular-nums opacity-70">{unread.data!.total}</span>
+          )}
         </button>
 
         {platforms.map(p => (
@@ -102,6 +106,11 @@ export function Sidebar() {
                     )}
                   >
                     {source.label.split(' · ')[1]}
+                    {(unread.data?.sources?.[source.name] ?? 0) > 0 && (
+                      <span className="ml-auto text-xs tabular-nums opacity-70">
+                        {unread.data!.sources[source.name]}
+                      </span>
+                    )}
                   </button>
                   <button
                     onClick={() => refreshSources([source.name])}

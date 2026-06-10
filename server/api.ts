@@ -9,9 +9,10 @@ import {
   listAuthors,
   listMessages,
   listWindowResources,
+  unreadCounts,
 } from './resources'
 import { createRefreshWindow, getRunningWindow, runningWindowResources, watchWindow } from './refresh'
-import { patchOverlay, type OverlayEntry } from './store'
+import { patchOverlay, patchOverlayMany, type OverlayEntry } from './store'
 import { mediaFilePath, MIME_BY_EXT } from './media'
 import { readFile } from 'fs/promises'
 
@@ -36,11 +37,42 @@ apiV1.get('/messages', async c => {
       authorSelector: c.req.query('authorSelector'),
       names: namesParam ? namesParam.split(',').slice(0, 300) : undefined,
       limit: intParam(c.req.query('limit')),
+      sort: c.req.query('sort') === 'unread-first' ? 'unread-first' : 'time',
+      unreadOnly: c.req.query('unread') === 'true',
     })
     return c.json(list('Message', items))
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
   }
+})
+
+// 批量已读（视口自动已读/一键全已读用）：names 指定，或 labelSelector 圈范围（'' = 全部）
+apiV1.post('/messages/mark-read', async c => {
+  let body: { names?: string[]; labelSelector?: string } = {}
+  try {
+    body = (await c.req.json()) as typeof body
+  } catch {
+    return c.json({ error: 'invalid JSON body' }, 400)
+  }
+  let targets: string[]
+  if (Array.isArray(body.names)) {
+    targets = body.names.slice(0, 1000).filter(n => typeof n === 'string')
+  } else if (typeof body.labelSelector === 'string') {
+    const matched = await listMessages({ labelSelector: body.labelSelector || undefined, unreadOnly: true })
+    targets = matched.map(m => m.metadata.name)
+  } else {
+    return c.json({ error: 'names or labelSelector required' }, 400)
+  }
+  const readAt = new Date().toISOString()
+  await patchOverlayMany(
+    'messages',
+    Object.fromEntries(targets.map(n => [n, { status: { read: true, readAt } }])),
+  )
+  return c.json({ marked: targets.length })
+})
+
+apiV1.get('/unread-counts', async c => {
+  return c.json({ apiVersion: 'radar/v1', kind: 'UnreadCounts', ...(await unreadCounts()) })
 })
 
 apiV1.get('/messages/:name', async c => {

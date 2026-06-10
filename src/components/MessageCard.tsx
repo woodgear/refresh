@@ -1,7 +1,8 @@
 import type { Message, MediaRef } from '@/api/radar'
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'
-import { Heart, MessageCircle, Repeat2, Eye, ArrowUp, Clock, Repeat, ExternalLink } from 'lucide-react'
-import { useState } from 'react'
+import { Heart, MessageCircle, Repeat2, Eye, ArrowUp, Clock, Repeat, ExternalLink, Circle, CheckCircle2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { cn } from '@/lib/utils'
 
 function formatNumber(n: number): string {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`
@@ -19,15 +20,59 @@ function formatTime(iso: string | undefined): string {
   return `${month}-${day} ${hours}:${minutes}`
 }
 
-export function MessageCard({ message }: { message: Message }) {
+interface MessageCardProps {
+  message: Message
+  /** 卡片在视口中停留足够久（自动已读用） */
+  onSeen?: (name: string) => void
+  onToggleRead?: (name: string, read: boolean) => void
+}
+
+export function MessageCard({ message, onSeen, onToggleRead }: MessageCardProps) {
   const { spec, metadata } = message
   const platform = metadata.labels?.platform
+  const read = !!message.status.read
   const [showContent, setShowContent] = useState(false)
   const [lightbox, setLightbox] = useState<MediaRef | null>(null)
   const author = spec.author
+  const rootRef = useRef<HTMLDivElement>(null)
+  const seenFired = useRef(false)
+
+  // 视口自动已读：卡片 50% 可见持续 1.5s 触发一次
+  useEffect(() => {
+    if (!onSeen || read || seenFired.current || !rootRef.current) return
+    let timer: number | null = null
+    const observer = new IntersectionObserver(
+      entries => {
+        const visible = entries[0]?.isIntersecting
+        if (visible && timer === null) {
+          timer = window.setTimeout(() => {
+            if (!seenFired.current) {
+              seenFired.current = true
+              onSeen(metadata.name)
+            }
+          }, 1500)
+        } else if (!visible && timer !== null) {
+          window.clearTimeout(timer)
+          timer = null
+        }
+      },
+      { threshold: 0.5 },
+    )
+    observer.observe(rootRef.current)
+    return () => {
+      if (timer !== null) window.clearTimeout(timer)
+      observer.disconnect()
+    }
+  }, [onSeen, read, metadata.name])
 
   return (
-    <Card className="hover:shadow-md transition-shadow">
+    <Card
+      ref={rootRef}
+      className={cn(
+        'hover:shadow-md transition-all border-l-2',
+        read ? 'border-l-transparent opacity-60 hover:opacity-100' : 'border-l-primary',
+      )}
+    >
       <CardHeader className="pb-2">
         {spec.retweetedBy && (
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -55,9 +100,18 @@ export function MessageCard({ message }: { message: Message }) {
               </span>
             </div>
           </div>
-          <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+          <span className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
             <Clock className="h-3 w-3" />
             {formatTime(metadata.creationTimestamp)}
+            {onToggleRead && (
+              <button
+                onClick={() => onToggleRead(metadata.name, !read)}
+                title={read ? '标为未读' : '标为已读'}
+                className="hover:text-foreground"
+              >
+                {read ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Circle className="h-3.5 w-3.5" />}
+              </button>
+            )}
           </span>
         </div>
         {spec.title && (
