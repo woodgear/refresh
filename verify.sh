@@ -72,6 +72,12 @@ assert_eq "zhihu-8003" "$(curl -s "$BASE/messages?labelSelector=platform=zhihu" 
 assert_eq "mock excerpt one" "$(curl -s "$BASE/messages/zhihu-8001" | jq -r .spec.text)" "单条 GET + normalize"
 RAW_ID=$(curl -s "$BASE/messages/zhihu-8001" | jq -r .spec.raw.id)
 assert_eq "8001" "$RAW_ID" "spec.raw 保留原始 payload"
+# 多源归属：同一内容被第二个源推到后，两个源的视图里都应出现
+curl -s -X POST "$BASE/refreshwindows" -d '{"spec":{"source":"zhihu-main-follow"}}' >/dev/null
+sleep 1
+assert_eq "3" "$(curl -s "$BASE/messages?labelSelector=source=zhihu-main-follow" | jq '.items | length')" "多源归属：后见源也能查到"
+assert_eq "3" "$(curl -s "$BASE/messages?labelSelector=source=zhihu-main-recommend" | jq '.items | length')" "多源归属：首见源不受影响"
+assert_eq "5" "$(curl -s "$BASE/messages" | jq '.items | length')" "多源归属不产生重复消息"
 
 log "== A3/A4: created_at + 媒体本地化（mock GraphQL 链路） =="
 TW=$(curl -s "$BASE/messages/twitter-9001")

@@ -52,6 +52,16 @@ export function ingestWindow(win: WindowFile): { newCount: number; dupCount: num
       dupCount++
       mergeStats(existing.spec, message.spec as unknown as Record<string, unknown>)
       existing.metadata.annotations!['radar/lastSeenWindow'] = windowName
+      // 同一条内容可能被多个源推到（如关注的人的推文同时出现在推荐流）：归属是集合
+      if (source) {
+        const cur = (existing.metadata.annotations!['radar/sources'] ?? existing.metadata.labels?.source ?? '')
+          .split(',')
+          .filter(Boolean)
+        if (!cur.includes(source.name)) {
+          cur.push(source.name)
+          existing.metadata.annotations!['radar/sources'] = cur.join(',')
+        }
+      }
     } else {
       newCount++
       // 媒体/头像回填：已本地化的换成 /api/v1/media/<hash>，否则保留外链
@@ -87,6 +97,7 @@ export function ingestWindow(win: WindowFile): { newCount: number; dupCount: num
           annotations: {
             'radar/firstSeenWindow': windowName,
             'radar/lastSeenWindow': windowName,
+            ...(source ? { 'radar/sources': source.name } : {}),
           },
           creationTimestamp: message.creationTimestamp ?? fetchedAt ?? undefined,
         },
@@ -186,6 +197,12 @@ export async function listMessages(opts: ListMessagesOpts) {
     return withOverlay('messages', opts.limit ? picked.slice(0, opts.limit) : picked)
   }
   const selector = parseSelector(opts.labelSelector)
+  // source 是多值归属：selector 里的 source=X 按 radar/sources 集合匹配（含被其他源先抓到的同一条内容）
+  let wantSource: string | null = null
+  if (selector && 'source' in selector) {
+    wantSource = selector.source
+    delete selector.source
+  }
   let authorRefs: Set<string> | null = null
   if (opts.authorSelector) {
     const matched = await listAuthors({ labelSelector: opts.authorSelector })
@@ -193,6 +210,12 @@ export async function listMessages(opts: ListMessagesOpts) {
   }
 
   let result = [...messages.values()].filter(m => matchLabels(m, selector))
+  if (wantSource) {
+    result = result.filter(m => {
+      const sources = m.metadata.annotations?.['radar/sources'] ?? m.metadata.labels?.source ?? ''
+      return sources.split(',').includes(wantSource)
+    })
+  }
   if (authorRefs) {
     result = result.filter(m => {
       const ref = (m.metadata.labels ?? {}).author

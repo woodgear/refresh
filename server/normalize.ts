@@ -29,7 +29,7 @@ export interface MessageSpec {
   author?: AuthorSnapshot
   media: MediaRef[]
   stats?: Record<string, number>
-  refs?: { quoted?: string | null; replyTo?: string | null }
+  refs?: { quoted?: string | null; replyTo?: string | null; replyToHandle?: string }
   /** 引用推文的轻量快照（复刻引用卡片用） */
   quotedSnapshot?: { id: string | null; author: string | null; text: string | null }
   /** 转推场景：转推者 handle（内容字段来自被转推文） */
@@ -209,6 +209,7 @@ function normalizeTwitterGraphql(raw: Raw): NormalizedItem | null {
         refs: {
           quoted: quoted?.id ? `twitter-${quoted.id}` : null,
           replyTo: str(contentLegacy.in_reply_to_status_id_str) ? `twitter-${str(contentLegacy.in_reply_to_status_id_str)}` : null,
+          ...(str(contentLegacy.in_reply_to_screen_name) ? { replyToHandle: str(contentLegacy.in_reply_to_screen_name) } : {}),
         },
         ...(quoted ? { quotedSnapshot: quoted } : {}),
         ...(retweeter?.handle ? { retweetedBy: retweeter.handle } : {}),

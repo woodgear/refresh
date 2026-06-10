@@ -33,6 +33,9 @@ export function MessageCard({ message }: { message: Message }) {
             <Repeat className="h-3 w-3" />@{spec.retweetedBy} 转推
           </div>
         )}
+        {spec.refs?.replyToHandle && (
+          <div className="text-xs text-muted-foreground">↩ 回复 @{spec.refs.replyToHandle}</div>
+        )}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             {author?.avatar ? (
