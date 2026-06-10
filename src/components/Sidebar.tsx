@@ -61,6 +61,7 @@ export function Sidebar() {
   const platforms = [
     { platform: 'zhihu' as const, label: '知乎', account: 'zhihu-main' },
     { platform: 'twitter' as const, label: '推特', account: 'twitter-main' },
+    { platform: 'bilibili' as const, label: 'B站', account: 'bilibili-main' },
   ]
 
   const anyRefreshing = refreshing.size > 0

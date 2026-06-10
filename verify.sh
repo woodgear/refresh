@@ -125,6 +125,20 @@ curl -s -X POST "$BASE/messages/mark-read" -d '{"labelSelector":"platform=zhihu"
 assert_eq "2" "$(curl -s "$BASE/unread-counts" | jq -r .total)" "按 selector 全部已读"
 assert_eq "0" "$(curl -s "$BASE/unread-counts" | jq -r '.sources["zhihu-main-recommend"] // 0')" "源级未读计数归零"
 
+log "== bilibili（新平台走通用链路） =="
+BWIN=$(curl -s -X POST "$BASE/refreshwindows" -d '{"spec":{"source":"bilibili-main-popular"}}' | jq -r .metadata.name)
+sleep 1
+assert_eq "Succeeded" "$(curl -s "$BASE/refreshwindows/$BWIN" | jq -r .status.phase)" "bilibili window Succeeded"
+BMSG=$(curl -s "$BASE/messages/bilibili-BVmock0001")
+assert_eq "mock bili video" "$(echo "$BMSG" | jq -r .spec.title)" "bilibili normalize（标题）"
+assert_eq "https://www.bilibili.com/video/BVmock0001" "$(echo "$BMSG" | jq -r .spec.url)" "bilibili 视频链接"
+case "$(echo "$BMSG" | jq -r '.spec.media[0].url')" in
+  /api/v1/media/*) ok "bilibili 封面已本地化" ;;
+  *) fail "bilibili 封面未本地化: $(echo "$BMSG" | jq -r '.spec.media[0].url')" ;;
+esac
+assert_eq "测试UP" "$(curl -s "$BASE/authors/bilibili-42" | jq -r .spec.displayName)" "bilibili 作者注册"
+assert_eq "200" "$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${PORT}/rss/bilibili-main-popular.xml")" "bilibili RSS 可用"
+
 log "== A8(半自动): RSS 输出 =="
 RSS_CODE=$(curl -s -o "$TMPDIR/feed.xml" -w '%{http_code}' "http://localhost:${PORT}/rss/zhihu-main-recommend.xml")
 assert_eq "200" "$RSS_CODE" "RSS 200"
@@ -185,7 +199,7 @@ wait $SERVER_PID 2>/dev/null
 RADAR_DATA_DIR="$TMPDIR" RADAR_FETCHER=mock RADAR_SCHEDULER=off RADAR_AUTH_PRECHECK=off PORT=$PORT bun server/index.ts >>"$TMPDIR/server.log" 2>&1 &
 SERVER_PID=$!
 for i in $(seq 1 50); do curl -sf "$BASE/accounts" >/dev/null 2>&1 && break; sleep 0.2; done
-assert_eq "5" "$(curl -s "$BASE/messages" | jq '.items | length')" "重启后 messages 恢复"
+assert_eq "6" "$(curl -s "$BASE/messages" | jq '.items | length')" "重启后 messages 恢复"
 assert_eq "test-cat" "$(curl -s "$BASE/authors/zhihu-mock-author" | jq -r .metadata.labels.category)" "重启后 overlay 保留"
 
 log ""

@@ -24,6 +24,12 @@ const LOGIN_URLS: Record<string, { url: string; mode: 'qr' | 'window'; successWh
     mode: 'window',
     successWhen: href => href.includes('x.com/home'),
   },
+  bilibili: {
+    url: 'https://passport.bilibili.com/login',
+    mode: 'qr',
+    // 扫码成功后离开 passport 回到主站
+    successWhen: href => href.includes('bilibili.com') && !href.includes('passport.'),
+  },
 }
 
 interface LoginSessionState {

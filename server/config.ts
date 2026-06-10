@@ -23,6 +23,7 @@ export interface SourceConfig {
 export const ACCOUNTS: AccountConfig[] = [
   { name: 'zhihu-main', platform: 'zhihu', displayName: '知乎主号' },
   { name: 'twitter-main', platform: 'twitter', displayName: '推特主号' },
+  { name: 'bilibili-main', platform: 'bilibili', displayName: 'B站主号' },
 ]
 
 export const SOURCES: SourceConfig[] = [
@@ -30,6 +31,8 @@ export const SOURCES: SourceConfig[] = [
   { name: 'zhihu-main-follow', account: 'zhihu-main', platform: 'zhihu', capability: 'follow', adapter: 'zhihu/follow', fetchVia: 'cdp' },
   { name: 'twitter-main-recommend', account: 'twitter-main', platform: 'twitter', capability: 'recommend', adapter: 'twitter/recommend', fetchVia: 'cdp' },
   { name: 'twitter-main-following', account: 'twitter-main', platform: 'twitter', capability: 'following', adapter: 'twitter/following', fetchVia: 'cdp' },
+  { name: 'bilibili-main-follow', account: 'bilibili-main', platform: 'bilibili', capability: 'follow', adapter: 'bilibili/feed', fetchVia: 'cdp' },
+  { name: 'bilibili-main-popular', account: 'bilibili-main', platform: 'bilibili', capability: 'popular', adapter: 'bilibili/popular', fetchVia: 'cdp' },
 ]
 
 export function getSource(name: string): SourceConfig | undefined {

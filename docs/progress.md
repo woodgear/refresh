@@ -46,6 +46,8 @@ verify.sh 全绿（A1-A4, A6, A9）且 A5/A7/A8 均为 [A] awaiting-user → loo
 
 ## 迭代日志（续）
 
+- 2026-06-11 / B站接入 / 架构通用性验证成功: 新增 cdp-bilibili.ts(动态流 polymer API + 热门 popular API,页面上下文 fetch) + normalizeBilibili(popular/dynamic 两形态,AV 用 bvid 命名与热门自动多源归属,封面图只取 cover 不采视频) + config/auth(nav API)/login(passport QR)/前端注册,其余全复用。坑: polymer pub_ts 是数字字符串。verify 67 断言全绿,实测两源各15条 Succeeded,封面/头像本地化,RSS 合法。
+
 - 2026-06-10 / 日志落盘 / logger.ts: stdout + data/logs/radar-YYYY-MM-DD.log 按天滚动; RefreshWindow 执行日志双写(watch SSE+文件,scope=window名); scheduler/auth/index/login 全部走 rlog。GET /api/v1/logs(dates+tail)。UI 新增管理页(账号状态+重新检测+日志实时 tail/日期切换/跟随最新),侧栏 console 移除。verify 49 断言全绿。
 
 （每轮迭代在此追加一行：日期 / 完成项 / 备注）

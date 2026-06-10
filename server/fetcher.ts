@@ -61,7 +61,11 @@ export class MockFetcher implements Fetcher {
     const items =
       source.platform === 'twitter'
         ? [tweet('9001', 'mock tweet one', '01'), tweet('9002', 'mock tweet two', '02')]
-        : [
+        : source.platform === 'bilibili'
+          ? [
+              { bvid: 'BVmock0001', title: 'mock bili video', desc: 'mock bili desc', pic: PNG, pubdate: 1781110000, owner: { mid: 42, name: '测试UP', face: PNG }, stat: { view: 100, like: 5, danmaku: 2 } },
+            ]
+          : [
             { id: '8001', title: 'mock zhihu answer', excerpt: 'mock excerpt one', created_time: 1781100000, url: 'https://www.zhihu.com/question/1/answer/8001', author: { name: '测试作者', url: 'https://www.zhihu.com/people/mock-author' } },
             { id: '8002', title: 'mock zhihu answer 2', excerpt: 'mock excerpt two', created_time: 1781103600, url: 'https://www.zhihu.com/question/1/answer/8002', author: { name: '测试作者', url: 'https://www.zhihu.com/people/mock-author' } },
             // 广告：必须被整条丢弃
@@ -104,6 +108,10 @@ export class RoutingFetcher implements Fetcher {
     if (source.fetchVia === 'cdp' && source.platform === 'zhihu') {
       const { fetchZhihuFeed } = await import('./cdp-zhihu')
       return fetchZhihuFeed(source.capability as 'recommend' | 'follow', count, log)
+    }
+    if (source.fetchVia === 'cdp' && source.platform === 'bilibili') {
+      const { fetchBilibiliFeed } = await import('./cdp-bilibili')
+      return fetchBilibiliFeed(source.capability as 'follow' | 'popular', count, log)
     }
     return this.bb.fetch(source, count, log)
   }

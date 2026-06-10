@@ -359,9 +359,135 @@ function normalizeZhihuTopstory(raw: Raw): NormalizedItem | null {
   }
 }
 
+// ---------- bilibili schema（CDP：popular 列表项 / polymer 动态项） ----------
+
+const fixUrl = (u: string | undefined): string | undefined =>
+  u?.startsWith('//') ? `https:${u}` : u
+
+function biliAuthor(mid: unknown, name?: string, face?: string) {
+  const id = str(mid) ?? (num(mid) !== undefined ? String(mid) : undefined)
+  const ref = id ? `bilibili-${id}` : null
+  return {
+    snapshot: { ref, name, avatar: fixUrl(face) ?? null, url: id ? `https://space.bilibili.com/${id}` : undefined },
+    author: ref
+      ? {
+          name: ref,
+          spec: { authorId: id, displayName: name, avatar: fixUrl(face) ?? null, url: `https://space.bilibili.com/${id}` },
+        }
+      : null,
+  }
+}
+
+/** 热门列表项：{bvid,title,pic,owner,stat,pubdate,desc} */
+function normalizeBiliPopular(raw: Raw): NormalizedItem | null {
+  const bvid = str(raw.bvid)
+  if (!bvid) return null
+  const owner = (raw.owner ?? {}) as Raw
+  const stat = (raw.stat ?? {}) as Raw
+  const { snapshot, author } = biliAuthor(owner.mid, str(owner.name), str(owner.face))
+  const pubdate = num(raw.pubdate)
+  const cover = fixUrl(str(raw.pic))
+  return {
+    message: {
+      name: `bilibili-${bvid}`,
+      creationTimestamp: pubdate ? new Date(pubdate * 1000).toISOString() : null,
+      spec: {
+        raw,
+        title: str(raw.title),
+        text: str(raw.desc),
+        url: `https://www.bilibili.com/video/${bvid}`,
+        author: snapshot,
+        // 设计约定：B 站只取封面图，不做视频播放采集
+        media: cover ? [{ type: 'image', originUrl: cover, url: null }] : [],
+        stats: { views: num(raw.stat && stat.view) ?? 0, likes: num(stat.like) ?? 0, danmaku: num(stat.danmaku) ?? 0 },
+        content: null,
+      },
+    },
+    author,
+  }
+}
+
+/** polymer 动态项：{id_str,type,modules:{module_author,module_dynamic{major,desc}}} */
+function normalizeBiliDynamic(raw: Raw): NormalizedItem | null {
+  const modules = (raw.modules ?? {}) as Raw
+  const ma = (modules.module_author ?? {}) as Raw
+  const md = (modules.module_dynamic ?? {}) as Raw
+  const major = (md.major ?? {}) as Raw
+  const descText = str(((md.desc ?? {}) as Raw).text)
+  const idStr = str(raw.id_str)
+  const { snapshot, author } = biliAuthor(ma.mid, str(ma.name), str(ma.face))
+  // polymer API 的 pub_ts 是数字字符串
+  const pubTs = num(ma.pub_ts) ?? (str(ma.pub_ts) ? parseInt(str(ma.pub_ts)!, 10) : undefined)
+  const created = pubTs ? new Date(pubTs * 1000).toISOString() : null
+
+  const base = {
+    raw,
+    author: snapshot,
+    content: null as string | null,
+  }
+
+  const archive = major.archive as Raw | undefined
+  if (archive && str(archive.bvid)) {
+    const bvid = str(archive.bvid)!
+    const stat = (archive.stat ?? {}) as Raw
+    const cover = fixUrl(str(archive.cover))
+    return {
+      message: {
+        name: `bilibili-${bvid}`, // 与热门流共用 bvid 命名，同一视频自动多源归属
+        creationTimestamp: created,
+        spec: {
+          ...base,
+          title: str(archive.title),
+          text: descText ?? str(archive.desc),
+          url: `https://www.bilibili.com/video/${bvid}`,
+          media: cover ? [{ type: 'image', originUrl: cover, url: null }] : [],
+          stats: {
+            views: parseInt(str(stat.play) ?? '0', 10) || num(stat.play) || 0,
+            danmaku: parseInt(str(stat.danmaku) ?? '0', 10) || 0,
+          },
+        },
+      },
+      author,
+    }
+  }
+
+  if (!idStr) return null
+  const draw = major.draw as Raw | undefined
+  const article = major.article as Raw | undefined
+  const drawImgs = Array.isArray(draw?.items)
+    ? (draw!.items as Raw[]).flatMap(it => (str(it.src) ? [{ type: 'image' as const, originUrl: fixUrl(str(it.src))!, url: null }] : []))
+    : []
+  const articleCovers = Array.isArray(article?.covers)
+    ? (article!.covers as unknown[]).flatMap(c => (typeof c === 'string' ? [{ type: 'image' as const, originUrl: fixUrl(c)!, url: null }] : []))
+    : []
+
+  return {
+    message: {
+      name: `bilibili-dyn-${idStr}`,
+      creationTimestamp: created,
+      spec: {
+        ...base,
+        title: article ? str(article.title) : undefined,
+        text: descText ?? str((((major.opus as Raw | undefined)?.summary ?? {}) as Raw).text),
+        url: article ? (fixUrl(str(article.jump_url)) ?? `https://t.bilibili.com/${idStr}`) : `https://t.bilibili.com/${idStr}`,
+        media: [...drawImgs, ...articleCovers],
+        stats: {},
+      },
+    },
+    author,
+  }
+}
+
+function normalizeBilibili(raw: Raw): NormalizedItem | null {
+  if (raw.modules && typeof raw.modules === 'object') return normalizeBiliDynamic(raw)
+  if (raw.bvid) return normalizeBiliPopular(raw)
+  return null
+}
+
 const NORMALIZERS: Record<string, (raw: Raw) => NormalizedItem | null> = {
   twitter: normalizeTwitter,
   zhihu: normalizeZhihu,
+  bilibili: normalizeBilibili,
 }
 
 /** 规范化一条 raw item；未知平台或缺 id 返回 null（跳过但不致命） */

@@ -187,6 +187,21 @@ export function MessageCard({ message, onSeen, onToggleRead }: MessageCardProps)
               {formatNumber(spec.stats?.views ?? 0)}
             </span>
           </>
+        ) : platform === 'bilibili' ? (
+          <>
+            <span className="flex items-center gap-1">
+              <Eye className="h-3 w-3" />
+              {formatNumber(spec.stats?.views ?? 0)}
+            </span>
+            <span className="flex items-center gap-1">
+              <Heart className="h-3 w-3" />
+              {formatNumber(spec.stats?.likes ?? 0)}
+            </span>
+            <span className="flex items-center gap-1">
+              <MessageCircle className="h-3 w-3" />
+              {formatNumber(spec.stats?.danmaku ?? 0)}
+            </span>
+          </>
         ) : (
           <>
             <span className="flex items-center gap-1">

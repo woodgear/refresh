@@ -38,9 +38,29 @@ export async function checkAuth(accountName: string, log: (s: string) => void = 
   try {
     if (account.platform === 'zhihu') return finish(await checkZhihu())
     if (account.platform === 'twitter') return finish(await checkTwitter())
+    if (account.platform === 'bilibili') return finish(await checkBilibili())
     return finish({ auth: 'unknown', detail: `no checker for platform ${account.platform}` })
   } catch (err) {
     return finish({ auth: 'unknown', detail: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function checkBilibili(): Promise<Omit<AuthResult, 'lastChecked'>> {
+  const { tab, session } = await openSession('https://www.bilibili.com/')
+  try {
+    await waitForHost(session, 'bilibili.com')
+    const res = await session.evaluate<{ code: number; isLogin?: boolean; uname?: string; mid?: number }>(
+      `fetch('https://api.bilibili.com/x/web-interface/nav', { credentials: 'include' }).then(async r => {
+        const d = await r.json()
+        return { code: d.code, isLogin: d.data && d.data.isLogin, uname: d.data && d.data.uname, mid: d.data && d.data.mid }
+      })`,
+      20_000,
+    )
+    if (res.isLogin) return { auth: 'ok', userInfo: { name: res.uname, mid: res.mid } }
+    return { auth: 'logged_out', detail: `nav api code ${res.code}` }
+  } finally {
+    session.close()
+    await closeTab(tab.id)
   }
 }
 
