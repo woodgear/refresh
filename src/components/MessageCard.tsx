@@ -70,7 +70,7 @@ export function MessageCard({ message, onSeen, onToggleRead }: MessageCardProps)
       ref={rootRef}
       className={cn(
         'hover:shadow-md transition-all border-l-2',
-        read ? 'border-l-transparent opacity-60 hover:opacity-100' : 'border-l-primary',
+        read ? 'border-l-transparent' : 'border-l-primary',
       )}
     >
       <CardHeader className="pb-2">
@@ -221,7 +221,7 @@ export function MessageCard({ message, onSeen, onToggleRead }: MessageCardProps)
         >
           {lightbox.type === 'video' && lightbox.playUrl ? (
             <video
-              src={lightbox.playUrl}
+              src={`/api/v1/media-proxy?url=${encodeURIComponent(lightbox.playUrl)}`}
               poster={lightbox.url ?? lightbox.originUrl}
               controls
               autoPlay

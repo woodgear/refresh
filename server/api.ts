@@ -13,7 +13,7 @@ import {
 } from './resources'
 import { createRefreshWindow, getRunningWindow, runningWindowResources, watchWindow } from './refresh'
 import { patchOverlay, patchOverlayMany, type OverlayEntry } from './store'
-import { mediaFilePath, MIME_BY_EXT } from './media'
+import { mediaFilePath, MIME_BY_EXT, isAllowedMediaHost, proxyMediaFetch } from './media'
 import { readFile } from 'fs/promises'
 
 export const apiV1 = new Hono()
@@ -195,6 +195,26 @@ apiV1.get('/media/:file', async c => {
     })
   } catch {
     return c.json({ error: 'not found' }, 404)
+  }
+})
+
+// 视频等大媒体不落盘，流式代理（透传 Range 支持拖进度条）；域名白名单防开放代理
+apiV1.get('/media-proxy', async c => {
+  const url = c.req.query('url')
+  if (!url || !isAllowedMediaHost(url)) return c.json({ error: 'url missing or host not allowed' }, 400)
+  try {
+    const upstream = await proxyMediaFetch(url, c.req.header('range'))
+    const headers = new Headers()
+    for (const h of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
+      const v = upstream.headers.get(h)
+      if (v) headers.set(h, v)
+    }
+    headers.set('Cache-Control', 'public, max-age=86400')
+    return new Response(upstream.body, { status: upstream.status, headers })
+  } catch (err) {
+    const { rlog } = await import('./logger')
+    rlog('media-proxy', `${url.slice(0, 80)}: ${err instanceof Error ? err.message : err}`)
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 502)
   }
 })
 

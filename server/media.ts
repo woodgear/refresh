@@ -148,3 +148,45 @@ export function mediaFilePath(file: string): string | null {
   if (!/^[a-f0-9]{64}\.[a-z0-9]+$/.test(file)) return null
   return join(MEDIA_DIR, file)
 }
+
+/** 流式代理一个媒体 URL（视频播放用）：透传 Range，直连失败走代理。
+ *  不能给流式响应挂超时 signal（会在播放中途掐断 body），超时只管"等响应头"阶段。 */
+export async function proxyMediaFetch(url: string, range?: string): Promise<Response> {
+  const headers: Record<string, string> = {}
+  const referer = refererFor(url)
+  if (referer) headers.Referer = referer
+  if (range) headers.Range = range
+
+  const host = new URL(url).hostname
+  if (!directFailedHosts.has(host)) {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 8000)
+    try {
+      const res = await fetch(url, { headers, signal: ctrl.signal })
+      clearTimeout(timer)
+      if (res.ok) return res
+      throw new Error(`http ${res.status}`)
+    } catch {
+      clearTimeout(timer)
+      directFailedHosts.add(host)
+    }
+  }
+  return fetch(url, { headers, proxy: PROXY } as RequestInit)
+}
+
+/** 允许代理的外部媒体域（防开放代理） */
+export function isAllowedMediaHost(url: string): boolean {
+  try {
+    const host = new URL(url).hostname
+    return (
+      host === 'video.twimg.com' ||
+      host === 'pbs.twimg.com' ||
+      host.endsWith('.zhimg.com') ||
+      host.endsWith('.zhihu.com') ||
+      host.endsWith('.bilivideo.com') ||
+      host.endsWith('.hdslb.com')
+    )
+  } catch {
+    return false
+  }
+}
