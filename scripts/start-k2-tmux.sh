@@ -21,7 +21,14 @@ if tmux has-session -t "$SESSION" 2>/dev/null; then
   tmux kill-session -t "$SESSION"
 fi
 
-common='if [ -f ~/.env/.all.env ]; then set -a; source ~/.env/.all.env; set +a; fi'
+common='
+if [ -f ~/.env/.all.env ]; then set -a; source ~/.env/.all.env; set +a; fi
+uid=$(id -u)
+if [ -z "${XDG_RUNTIME_DIR:-}" ] && [ -d "/run/user/$uid" ]; then export XDG_RUNTIME_DIR="/run/user/$uid"; fi
+if [ -z "${WAYLAND_DISPLAY:-}" ] && [ -S "${XDG_RUNTIME_DIR:-}/wayland-0" ]; then export WAYLAND_DISPLAY=wayland-0; fi
+if [ -z "${DISPLAY:-}" ]; then export DISPLAY=:0; fi
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -S "${XDG_RUNTIME_DIR:-}/bus" ]; then export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"; fi
+'
 
 tmux new-session -d -s "$SESSION" -n server -c "$ROOT" \
   "$common; PORT=$SERVER_PORT RADAR_BASE_URL=$PUBLIC_URL bun server/index.ts 2>&1 | tee -a data/logs/refresh-k2-server.log"
