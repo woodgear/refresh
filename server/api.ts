@@ -85,9 +85,52 @@ apiV1.patch('/authors/:name', async c => {
 
 apiV1.get('/accounts', c => c.json(list('Account', accountResources())))
 
-apiV1.get('/accounts/:name', c => {
-  const a = accountResources().find(r => r.metadata.name === c.req.param('name'))
+apiV1.get('/accounts/:name', async c => {
+  const name = c.req.param('name')
+  if (c.req.query('check') === '1') {
+    const { checkAuth } = await import('./auth')
+    await checkAuth(name)
+  }
+  const a = accountResources().find(r => r.metadata.name === name)
   return a ? c.json(a) : c.json({ error: 'not found' }, 404)
+})
+
+// ---------- loginsessions ----------
+
+apiV1.post('/loginsessions', async c => {
+  let body: Record<string, unknown> = {}
+  try {
+    body = (await c.req.json()) as Record<string, unknown>
+  } catch {
+    return c.json({ error: 'invalid JSON body' }, 400)
+  }
+  const spec = (body.spec ?? body) as Record<string, unknown>
+  const { createLoginSession } = await import('./login')
+  try {
+    return c.json(await createLoginSession(String(spec.account ?? '')), 202)
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+  }
+})
+
+apiV1.get('/loginsessions', async c => {
+  const { listLoginSessions } = await import('./login')
+  return c.json(list('LoginSession', listLoginSessions()))
+})
+
+apiV1.get('/loginsessions/:id', async c => {
+  const { pollLoginSession } = await import('./login')
+  const s = await pollLoginSession(c.req.param('id'))
+  return s ? c.json(s) : c.json({ error: 'not found' }, 404)
+})
+
+apiV1.get('/loginsessions/:id/qr', async c => {
+  const { loginSessionQr } = await import('./login')
+  const png = await loginSessionQr(c.req.param('id'))
+  if (!png) return c.json({ error: 'qr unavailable' }, 404)
+  return new Response(new Uint8Array(png), {
+    headers: { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' },
+  })
 })
 
 // ---------- media ----------

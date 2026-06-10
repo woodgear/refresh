@@ -99,6 +99,31 @@ assert_eq "0" "$(curl -s "$BASE/messages?authorSelector=category=other" | jq '.i
 curl -s -X PATCH "$BASE/messages/zhihu-8001" -d '{"labels":{"starred":"true"}}' >/dev/null
 assert_eq "true" "$(curl -s "$BASE/messages/zhihu-8001" | jq -r .metadata.labels.starred)" "PATCH message label（overlay）"
 
+log "== A5(mock): 登录闭环（logged_out → LoginSession → Succeeded → 补抓） =="
+PORT2=$((PORT+1))
+BASE2="http://localhost:${PORT2}/api/v1"
+TMPDIR2=$(mktemp -d /tmp/radar-verify-auth-XXXXXX)
+RADAR_DATA_DIR="$TMPDIR2" RADAR_FETCHER=mock RADAR_AUTH_MOCK=logged_out PORT=$PORT2 bun server/index.ts >"$TMPDIR2/server.log" 2>&1 &
+SERVER2_PID=$!
+trap 'kill $SERVER_PID $SERVER2_PID 2>/dev/null; rm -rf "$TMPDIR" "$TMPDIR2"' EXIT
+for i in $(seq 1 50); do curl -sf "$BASE2/accounts" >/dev/null 2>&1 && break; sleep 0.2; done
+
+assert_eq "logged_out" "$(curl -s "$BASE2/accounts/zhihu-main?check=1" | jq -r .status.auth)" "登出态被检测"
+LS=$(curl -s -X POST "$BASE2/loginsessions" -d '{"spec":{"account":"zhihu-main"}}')
+LS_ID=$(echo "$LS" | jq -r .metadata.name)
+assert_eq "WaitingScan" "$(echo "$LS" | jq -r .status.phase)" "LoginSession 进入 WaitingScan"
+assert_eq "qr" "$(echo "$LS" | jq -r .spec.mode)" "知乎走 QR 模式"
+QR_TYPE=$(curl -s -o /dev/null -w '%{content_type}' "$BASE2/loginsessions/$LS_ID/qr")
+assert_eq "image/png" "$QR_TYPE" "QR 子资源返回 PNG"
+curl -s "$BASE2/loginsessions/$LS_ID" >/dev/null
+curl -s "$BASE2/loginsessions/$LS_ID" >/dev/null
+assert_eq "Succeeded" "$(curl -s "$BASE2/loginsessions/$LS_ID" | jq -r .status.phase)" "轮询至 Succeeded"
+assert_eq "ok" "$(curl -s "$BASE2/accounts/zhihu-main" | jq -r .status.auth)" "登录后 Account.status 翻转"
+sleep 1.5
+POST_LOGIN=$(curl -s "$BASE2/refreshwindows" | jq '[.items[] | select(.spec.trigger == "post-login")] | length')
+assert_eq "2" "$POST_LOGIN" "登录成功自动补抓该账号全部源"
+kill $SERVER2_PID 2>/dev/null
+
 log "== 重启持久性：索引由档案+overlay 重建 =="
 kill $SERVER_PID 2>/dev/null
 wait $SERVER_PID 2>/dev/null

@@ -22,10 +22,10 @@
 
 ## M3 登录闭环
 
-- [ ] M3.1 checkAuth：zhihu/me 401、x.com/home 重定向、bilibili/me 检测，写入 Account.status
-- [ ] M3.2 LoginSession 资源 + QR 子资源（二维码区域截图镜像）
-- [ ] M3.3 登录成功 → 关 tab → 自动补抓（post-login RefreshWindow）
-- [ ] M3.4 mock 开关（强制 logged_out）调通流程；真实扫码留给用户验收 → 完成后标 [A] A5
+- [x] M3.1 checkAuth：zhihu/me 401、x.com/home 重定向、bilibili/me 检测，写入 Account.status
+- [x] M3.2 LoginSession 资源 + QR 子资源（二维码区域截图镜像）
+- [x] M3.3 登录成功 → 关 tab → 自动补抓（post-login RefreshWindow）
+- [A] M3.4 mock 开关（强制 logged_out）调通流程；真实扫码留给用户验收 → 完成后标 [A] A5
 
 ## M4 调度器
 
@@ -48,6 +48,7 @@ verify.sh 全绿（A1-A4, A6, A9）且 A5/A7/A8 均为 [A] awaiting-user → loo
 
 （每轮迭代在此追加一行：日期 / 完成项 / 备注）
 
+- 2026-06-10 / M3.1-M3.4 / auth.ts(checkAuth: zhihu /api/v4/me、twitter /home重定向、RADAR_AUTH_MOCK开关) login.ts(LoginSession: 知乎qr/推特window、QR区域截图镜像、TTL 10min、成功→关tab→翻状态→post-login补抓全源)。verify 38断言全绿(含mock登录闭环)。实测已登录态: 创建session即Succeeded并触发补抓。zhihu/follow adapter不稳→该源也切CDP(moments API,同schema)。真实扫码A5留用户验收[A]。
 - 2026-06-10 / M2.1-M2.5 / cdp.ts(WS会话+自愈) cdp-twitter.ts(HomeTimeline/HomeLatestTimeline拦截,去广告,转推/引用结构) cdp-zhihu.ts(topstory API分页,自带全文content=天然hydrated) normalize 支持两代schema media.ts(sha256本地化+manifest+知乎referer+直连失败走代理RADAR_PROXY默认7890,Bun不读系统代理) /api/v1/media/{file}。实测: 两平台各15条 Succeeded,知乎封面/头像/推特图全部本地化,created_at齐。verify 31断言全绿。
 - 2026-06-10 / M1.2-M1.6 / config.ts(账号/源注册表) normalize.ts(raw→spec,容忍缺字段) resources.ts(索引+selector) fetcher.ts(bb-browser/mock) refresh.ts(统一触发,Pending→Running→终态,watch事件) api.ts(REST信封) 挂入 index.ts(PORT 可配)。verify.sh 25 断言全绿(A1/A9+mock A2+重启持久性)。M1.6 决定: 52 个旧文件包装为 window 档案迁入(scripts/migrate-legacy.ts,幂等),原文件保留供旧 UI,M5 后删;真实数据索引 327 msgs/192 authors。
 - 2026-06-10 / M1.1 / server/store.ts：window 档案（appendWindow 重名拒绝、updateWindowStatus 仅推进 status）+ overlay（浅合并、null 删 key、applyOverlay）+ 原子写；冒烟断言全过。RADAR_DATA_DIR 可覆盖供测试用。
