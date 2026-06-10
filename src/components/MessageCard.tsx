@@ -1,6 +1,6 @@
-import type { Message } from '@/api/radar'
+import type { Message, MediaRef } from '@/api/radar'
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'
-import { Heart, MessageCircle, Repeat2, Eye, ArrowUp, Clock, Repeat } from 'lucide-react'
+import { Heart, MessageCircle, Repeat2, Eye, ArrowUp, Clock, Repeat, ExternalLink } from 'lucide-react'
 import { useState } from 'react'
 
 function formatNumber(n: number): string {
@@ -23,6 +23,7 @@ export function MessageCard({ message }: { message: Message }) {
   const { spec, metadata } = message
   const platform = metadata.labels?.platform
   const [showContent, setShowContent] = useState(false)
+  const [lightbox, setLightbox] = useState<MediaRef | null>(null)
   const author = spec.author
 
   return (
@@ -70,14 +71,7 @@ export function MessageCard({ message }: { message: Message }) {
       </CardHeader>
 
       <CardContent className="pb-2 space-y-2">
-        {spec.text && (
-          <p
-            className="text-sm whitespace-pre-wrap line-clamp-6 cursor-pointer"
-            onClick={() => spec.url && window.open(spec.url, '_blank')}
-          >
-            {spec.text}
-          </p>
-        )}
+        {spec.text && <p className="text-sm whitespace-pre-wrap line-clamp-6">{spec.text}</p>}
 
         {spec.quotedSnapshot?.text && (
           <blockquote className="border-l-2 pl-3 text-xs text-muted-foreground">
@@ -88,36 +82,36 @@ export function MessageCard({ message }: { message: Message }) {
         {spec.media.length > 0 && (
           <div className="flex gap-2 flex-wrap">
             {spec.media.slice(0, 4).map((m, i) => (
-              <a key={i} href={m.playUrl ?? m.url ?? m.originUrl} target="_blank" rel="noreferrer" className="relative">
-                <img
-                  src={m.url ?? m.originUrl}
-                  alt=""
-                  loading="lazy"
-                  className="h-32 rounded-md object-cover border"
-                />
+              <button key={i} onClick={() => setLightbox(m)} className="relative" title="点击预览">
+                <img src={m.url ?? m.originUrl} alt="" loading="lazy" className="h-32 rounded-md object-cover border" />
                 {m.type === 'video' && (
                   <span className="absolute inset-0 flex items-center justify-center text-white text-2xl bg-black/30 rounded-md">
                     ▶
                   </span>
                 )}
-              </a>
+              </button>
             ))}
           </div>
         )}
 
         {spec.content && (
           <div>
-            <button
-              className="text-xs text-primary hover:underline"
-              onClick={() => setShowContent(v => !v)}
-            >
+            <button className="text-xs text-primary hover:underline" onClick={() => setShowContent(v => !v)}>
               {showContent ? '收起全文' : '展开全文'}
             </button>
             {showContent && (
-              <div
-                className="prose prose-sm max-w-none mt-2 text-sm [&_img]:max-w-full [&_img]:rounded-md"
-                dangerouslySetInnerHTML={{ __html: spec.content }}
-              />
+              <>
+                <div
+                  className="prose prose-sm max-w-none mt-2 text-sm [&_img]:max-w-full [&_img]:rounded-md"
+                  dangerouslySetInnerHTML={{ __html: spec.content }}
+                />
+                <button
+                  className="text-xs text-primary hover:underline mt-2"
+                  onClick={() => setShowContent(false)}
+                >
+                  ↑ 收起全文
+                </button>
+              </>
             )}
           </div>
         )}
@@ -151,8 +145,44 @@ export function MessageCard({ message }: { message: Message }) {
             </span>
           </>
         )}
+        {spec.url && (
+          <a
+            href={spec.url}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1 hover:text-foreground"
+            title="打开原文"
+          >
+            <ExternalLink className="h-3 w-3" />
+            原文
+          </a>
+        )}
         <span className="ml-auto">{metadata.labels?.source}</span>
       </CardFooter>
+
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-6 cursor-zoom-out"
+          onClick={() => setLightbox(null)}
+        >
+          {lightbox.type === 'video' && lightbox.playUrl ? (
+            <video
+              src={lightbox.playUrl}
+              poster={lightbox.url ?? lightbox.originUrl}
+              controls
+              autoPlay
+              className="max-h-full max-w-full rounded-md"
+              onClick={e => e.stopPropagation()}
+            />
+          ) : (
+            <img
+              src={lightbox.url ?? lightbox.originUrl}
+              alt=""
+              className="max-h-full max-w-full object-contain rounded-md"
+            />
+          )}
+        </div>
+      )}
     </Card>
   )
 }
