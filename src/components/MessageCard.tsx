@@ -25,9 +25,11 @@ interface MessageCardProps {
   /** 卡片在视口中停留足够久（自动已读用） */
   onSeen?: (name: string) => void
   onToggleRead?: (name: string, read: boolean) => void
+  /** grid = 封面优先的紧凑卡片（B 站风格瀑布流用） */
+  layout?: 'list' | 'grid'
 }
 
-export function MessageCard({ message, onSeen, onToggleRead }: MessageCardProps) {
+export function MessageCard({ message, onSeen, onToggleRead, layout = 'list' }: MessageCardProps) {
   const { spec, metadata } = message
   const platform = metadata.labels?.platform
   const read = !!message.status.read
@@ -65,14 +67,23 @@ export function MessageCard({ message, onSeen, onToggleRead }: MessageCardProps)
     }
   }, [onSeen, read, metadata.name])
 
+  const isGrid = layout === 'grid'
+  const cover = isGrid ? spec.media.find(m => m.type === 'image' || m.url || m.originUrl) : undefined
+
   return (
     <Card
       ref={rootRef}
       className={cn(
-        'hover:shadow-md transition-all border-l-2',
+        'hover:shadow-md transition-all border-l-2 overflow-hidden',
         read ? 'border-l-transparent' : 'border-l-primary',
+        isGrid && 'break-inside-avoid mb-4',
       )}
     >
+      {isGrid && cover && (
+        <button onClick={() => setLightbox(cover)} className="block w-full" title="点击预览">
+          <img src={cover.url ?? cover.originUrl} alt="" loading="lazy" className="w-full aspect-video object-cover" />
+        </button>
+      )}
       <CardHeader className="pb-2">
         {spec.retweetedBy && (
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -116,7 +127,7 @@ export function MessageCard({ message, onSeen, onToggleRead }: MessageCardProps)
         </div>
         {spec.title && (
           <h3
-            className="font-medium text-sm cursor-pointer hover:underline"
+            className={cn('font-medium text-sm cursor-pointer hover:underline', isGrid && 'line-clamp-2')}
             onClick={() => spec.url && window.open(spec.url, '_blank')}
           >
             {spec.title}
@@ -125,7 +136,11 @@ export function MessageCard({ message, onSeen, onToggleRead }: MessageCardProps)
       </CardHeader>
 
       <CardContent className="pb-2 space-y-2">
-        {spec.text && <p className="text-sm whitespace-pre-wrap line-clamp-6">{spec.text}</p>}
+        {spec.text && (
+          <p className={cn('text-sm whitespace-pre-wrap', isGrid ? 'line-clamp-3 text-muted-foreground text-xs' : 'line-clamp-6')}>
+            {spec.text}
+          </p>
+        )}
 
         {spec.quotedSnapshot?.text && (
           <blockquote className="border-l-2 pl-3 text-xs text-muted-foreground">
@@ -133,11 +148,16 @@ export function MessageCard({ message, onSeen, onToggleRead }: MessageCardProps)
           </blockquote>
         )}
 
-        {spec.media.length > 0 && (
+        {spec.media.length > 0 && !(isGrid && cover && spec.media.length === 1) && (
           <div className="flex gap-2 flex-wrap">
-            {spec.media.slice(0, 4).map((m, i) => (
+            {(isGrid ? spec.media.filter(m => m !== cover) : spec.media).slice(0, 4).map((m, i) => (
               <button key={i} onClick={() => setLightbox(m)} className="relative" title="点击预览">
-                <img src={m.url ?? m.originUrl} alt="" loading="lazy" className="h-32 rounded-md object-cover border" />
+                <img
+                  src={m.url ?? m.originUrl}
+                  alt=""
+                  loading="lazy"
+                  className={cn('rounded-md object-cover border', isGrid ? 'h-16' : 'h-32')}
+                />
                 {m.type === 'video' && (
                   <span className="absolute inset-0 flex items-center justify-center text-white text-2xl bg-black/30 rounded-md">
                     ▶

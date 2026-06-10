@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useUIStore } from '@/stores/uiStore'
+import { defaultLayout, useUIStore } from '@/stores/uiStore'
 import { MessageCard } from '@/components/MessageCard'
 import { AdminPage } from '@/components/AdminPage'
 import {
@@ -12,7 +12,7 @@ import {
   type Message,
   type RefreshWindow,
 } from '@/api/radar'
-import { Loader2, ChevronLeft, CheckCheck } from 'lucide-react'
+import { Loader2, ChevronLeft, CheckCheck, List, LayoutGrid } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
@@ -50,7 +50,9 @@ function useReadActions() {
 }
 
 function FeedPage() {
-  const { activeSource, sortMode, unreadOnly, autoRead, setSortMode, setUnreadOnly, setAutoRead } = useUIStore()
+  const { activeSource, sortMode, unreadOnly, autoRead, layouts, setSortMode, setUnreadOnly, setAutoRead, setLayout } =
+    useUIStore()
+  const layout = layouts[activeSource] ?? defaultLayout(activeSource)
   const messages = useMessages(activeSource, { sort: sortMode, unreadOnly })
   const unread = useUnreadCounts()
   const { toggleRead, batchRead } = useReadActions()
@@ -104,6 +106,20 @@ function FeedPage() {
           <input type="checkbox" checked={autoRead} onChange={e => setAutoRead(e.target.checked)} />
           滚动已读
         </label>
+        <div className="flex items-center gap-0.5" title="布局（按源记忆）">
+          <button
+            onClick={() => setLayout(activeSource, 'list')}
+            className={cn('p-1 rounded', layout === 'list' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent')}
+          >
+            <List className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={() => setLayout(activeSource, 'grid')}
+            className={cn('p-1 rounded', layout === 'grid' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent')}
+          >
+            <LayoutGrid className="h-3.5 w-3.5" />
+          </button>
+        </div>
         <button
           onClick={() => void handleMarkAll()}
           className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded hover:bg-accent"
@@ -122,11 +138,12 @@ function FeedPage() {
         {messages.error && (
           <p className="text-center text-destructive py-8">加载失败: {(messages.error as Error).message}</p>
         )}
-        <div className="max-w-2xl mx-auto space-y-4">
+        <div className={cn(layout === 'grid' ? 'max-w-6xl mx-auto columns-2 xl:columns-3 gap-4' : 'max-w-2xl mx-auto space-y-4')}>
           {items.map(m => (
             <MessageCard
               key={m.metadata.name}
               message={m}
+              layout={layout}
               onToggleRead={toggleRead}
               onSeen={autoRead ? name => pending.current.add(name) : undefined}
             />
