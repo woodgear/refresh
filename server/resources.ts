@@ -29,9 +29,10 @@ const authors = new Map<string, Resource<Record<string, unknown>, AuthorStatus>>
 /** window 资源（不含 rawItems，列表用） */
 const windows = new Map<string, Resource>()
 
-/** 互动数据字段：重复出现时允许更新（docs/design.md §2 可变性策略） */
-function mergeStats(oldSpec: Record<string, unknown>, newSpec: Record<string, unknown>): void {
+/** 可重算派生字段：重复出现时允许更新（docs/design.md §2 可变性策略） */
+function mergeDerivedSpec(oldSpec: Record<string, unknown>, newSpec: Record<string, unknown>): void {
   if (newSpec.stats) oldSpec.stats = newSpec.stats
+  if (newSpec.durationSec !== undefined) oldSpec.durationSec = newSpec.durationSec
 }
 
 export function ingestWindow(win: WindowFile): { newCount: number; dupCount: number } {
@@ -50,7 +51,7 @@ export function ingestWindow(win: WindowFile): { newCount: number; dupCount: num
     const existing = messages.get(message.name)
     if (existing) {
       dupCount++
-      mergeStats(existing.spec, message.spec as unknown as Record<string, unknown>)
+      mergeDerivedSpec(existing.spec, message.spec as unknown as Record<string, unknown>)
       existing.metadata.annotations!['radar/lastSeenWindow'] = windowName
       // 同一条内容可能被多个源推到（如关注的人的推文同时出现在推荐流）：归属是集合
       if (source) {

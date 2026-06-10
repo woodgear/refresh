@@ -1,4 +1,4 @@
-import type { Message, MediaRef } from '@/api/radar'
+import { SOURCES, type Message, type MediaRef, type ResourceMeta } from '@/api/radar'
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'
 import { Heart, MessageCircle, Repeat2, Eye, ArrowUp, Clock, Repeat, ExternalLink, Circle, CheckCircle2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -20,6 +20,62 @@ function formatTime(iso: string | undefined): string {
   return `${month}-${day} ${hours}:${minutes}`
 }
 
+function formatDuration(totalSeconds: number): string {
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  if (hours > 0) return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
+const sourceLabels = new Map(SOURCES.map(source => [source.name, source.label]))
+
+type MediaPreview = { kind: 'media'; media: MediaRef }
+type EmbedPreview = { kind: 'embed'; src: string; title: string }
+type PreviewTarget = MediaPreview | EmbedPreview
+
+function messageSourceLabels(metadata: ResourceMeta): string[] {
+  const names = (metadata.annotations?.['radar/sources'] ?? metadata.labels?.source ?? '')
+    .split(',')
+    .filter(Boolean)
+
+  return names.map(name => {
+    const label = sourceLabels.get(name)
+    if (!label) throw new Error(`unknown source on message ${metadata.name}: ${name}`)
+    return label
+  })
+}
+
+function bilibiliPlayerPreview(message: Message): EmbedPreview | null {
+  if (message.metadata.labels?.platform !== 'bilibili') return null
+  const bvid = message.metadata.name.match(/^bilibili-(BV[0-9A-Za-z]+)/)?.[1]
+  if (!bvid) return null
+  const params = new URLSearchParams({ bvid, autoplay: '0', danmaku: '0' })
+  return {
+    kind: 'embed',
+    src: `https://player.bilibili.com/player.html?${params}`,
+    title: message.spec.title ?? message.metadata.name,
+  }
+}
+
+const embedPreviewResolvers = [bilibiliPlayerPreview]
+
+function embedPreviewFor(message: Message): EmbedPreview | null {
+  for (const resolve of embedPreviewResolvers) {
+    const preview = resolve(message)
+    if (preview) return preview
+  }
+  return null
+}
+
+function previewForMedia(message: Message, media: MediaRef, preferEmbed: boolean): PreviewTarget {
+  if (preferEmbed) {
+    const embed = embedPreviewFor(message)
+    if (embed) return embed
+  }
+  return { kind: 'media', media }
+}
+
 interface MessageCardProps {
   message: Message
   /** 卡片在视口中停留足够久（自动已读用） */
@@ -34,7 +90,7 @@ export function MessageCard({ message, onSeen, onToggleRead, layout = 'list' }: 
   const platform = metadata.labels?.platform
   const read = !!message.status.read
   const [showContent, setShowContent] = useState(false)
-  const [lightbox, setLightbox] = useState<MediaRef | null>(null)
+  const [preview, setPreview] = useState<PreviewTarget | null>(null)
   const author = spec.author
   const rootRef = useRef<HTMLDivElement>(null)
   const seenFired = useRef(false)
@@ -69,6 +125,8 @@ export function MessageCard({ message, onSeen, onToggleRead, layout = 'list' }: 
 
   const isGrid = layout === 'grid'
   const cover = isGrid ? spec.media.find(m => m.type === 'image' || m.url || m.originUrl) : undefined
+  const sources = messageSourceLabels(metadata)
+  const durationLabel = platform === 'bilibili' && spec.durationSec !== undefined ? formatDuration(spec.durationSec) : null
 
   return (
     <Card
@@ -80,8 +138,13 @@ export function MessageCard({ message, onSeen, onToggleRead, layout = 'list' }: 
       )}
     >
       {isGrid && cover && (
-        <button onClick={() => setLightbox(cover)} className="block w-full" title="点击预览">
+        <button onClick={() => setPreview(previewForMedia(message, cover, true))} className="relative block w-full" title="点击预览">
           <img src={cover.url ?? cover.originUrl} alt="" loading="lazy" className="w-full aspect-video object-cover" />
+          {durationLabel && (
+            <span className="absolute bottom-2 right-2 rounded-sm bg-black/75 px-1.5 py-0.5 text-[11px] font-medium leading-4 text-white shadow-sm">
+              {durationLabel}
+            </span>
+          )}
         </button>
       )}
       <CardHeader className="pb-2">
@@ -151,7 +214,12 @@ export function MessageCard({ message, onSeen, onToggleRead, layout = 'list' }: 
         {spec.media.length > 0 && !(isGrid && cover && spec.media.length === 1) && (
           <div className="flex gap-2 flex-wrap">
             {(isGrid ? spec.media.filter(m => m !== cover) : spec.media).slice(0, 4).map((m, i) => (
-              <button key={i} onClick={() => setLightbox(m)} className="relative" title="点击预览">
+              <button
+                key={i}
+                onClick={() => setPreview(previewForMedia(message, m, m === spec.media[0]))}
+                className="relative"
+                title="点击预览"
+              >
                 <img
                   src={m.url ?? m.originUrl}
                   alt=""
@@ -161,6 +229,11 @@ export function MessageCard({ message, onSeen, onToggleRead, layout = 'list' }: 
                 {m.type === 'video' && (
                   <span className="absolute inset-0 flex items-center justify-center text-white text-2xl bg-black/30 rounded-md">
                     ▶
+                  </span>
+                )}
+                {durationLabel && m === spec.media[0] && (
+                  <span className="absolute bottom-1.5 right-1.5 rounded-sm bg-black/75 px-1.5 py-0.5 text-[11px] font-medium leading-4 text-white shadow-sm">
+                    {durationLabel}
                   </span>
                 )}
               </button>
@@ -191,7 +264,7 @@ export function MessageCard({ message, onSeen, onToggleRead, layout = 'list' }: 
         )}
       </CardContent>
 
-      <CardFooter className="text-muted-foreground text-xs gap-4">
+      <CardFooter className="text-muted-foreground text-xs gap-3 sm:gap-4 flex-wrap">
         {platform === 'twitter' ? (
           <>
             <span className="flex items-center gap-1">
@@ -246,18 +319,43 @@ export function MessageCard({ message, onSeen, onToggleRead, layout = 'list' }: 
             原文
           </a>
         )}
-        <span className="ml-auto">{metadata.labels?.source}</span>
+        {sources.length > 0 && (
+          <span className="ml-auto flex min-w-0 flex-wrap justify-end gap-1.5">
+            {sources.map(source => (
+              <span
+                key={source}
+                className="rounded-sm border bg-muted/40 px-1.5 py-0.5 text-[11px] leading-4 text-muted-foreground"
+              >
+                {source}
+              </span>
+            ))}
+          </span>
+        )}
       </CardFooter>
 
-      {lightbox && (
+      {preview && (
         <div
           className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-6 cursor-zoom-out"
-          onClick={() => setLightbox(null)}
+          onClick={() => setPreview(null)}
         >
-          {lightbox.type === 'video' && lightbox.playUrl ? (
+          {preview.kind === 'embed' ? (
+            <div
+              className="aspect-video w-full max-w-5xl overflow-hidden rounded-md bg-black shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            >
+              <iframe
+                src={preview.src}
+                title={preview.title}
+                allow="fullscreen; picture-in-picture"
+                allowFullScreen
+                referrerPolicy="strict-origin-when-cross-origin"
+                className="h-full w-full"
+              />
+            </div>
+          ) : preview.media.type === 'video' && preview.media.playUrl ? (
             <video
-              src={`/api/v1/media-proxy?url=${encodeURIComponent(lightbox.playUrl)}`}
-              poster={lightbox.url ?? lightbox.originUrl}
+              src={`/api/v1/media-proxy?url=${encodeURIComponent(preview.media.playUrl)}`}
+              poster={preview.media.url ?? preview.media.originUrl}
               controls
               autoPlay
               className="max-h-full max-w-full rounded-md"
@@ -265,7 +363,7 @@ export function MessageCard({ message, onSeen, onToggleRead, layout = 'list' }: 
             />
           ) : (
             <img
-              src={lightbox.url ?? lightbox.originUrl}
+              src={preview.media.url ?? preview.media.originUrl}
               alt=""
               className="max-h-full max-w-full object-contain rounded-md"
             />

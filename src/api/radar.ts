@@ -26,6 +26,7 @@ export interface MessageSpec {
   url?: string
   author?: { ref?: string | null; name?: string; handle?: string; avatar?: string | null }
   media: MediaRef[]
+  durationSec?: number
   stats?: Record<string, number>
   refs?: { quoted?: string | null; replyTo?: string | null; replyToHandle?: string }
   quotedSnapshot?: { id: string | null; author: string | null; text: string | null }

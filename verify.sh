@@ -132,6 +132,7 @@ assert_eq "Succeeded" "$(curl -s "$BASE/refreshwindows/$BWIN" | jq -r .status.ph
 BMSG=$(curl -s "$BASE/messages/bilibili-BVmock0001")
 assert_eq "mock bili video" "$(echo "$BMSG" | jq -r .spec.title)" "bilibili normalize（标题）"
 assert_eq "https://www.bilibili.com/video/BVmock0001" "$(echo "$BMSG" | jq -r .spec.url)" "bilibili 视频链接"
+assert_eq "125" "$(echo "$BMSG" | jq -r .spec.durationSec)" "bilibili 视频时长"
 case "$(echo "$BMSG" | jq -r '.spec.media[0].url')" in
   /api/v1/media/*) ok "bilibili 封面已本地化" ;;
   *) fail "bilibili 封面未本地化: $(echo "$BMSG" | jq -r '.spec.media[0].url')" ;;

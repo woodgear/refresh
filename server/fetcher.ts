@@ -54,7 +54,7 @@ export class MockFetcher implements Fetcher {
         ? [tweet('9001', 'mock tweet one', '01'), tweet('9002', 'mock tweet two', '02')]
         : source.platform === 'bilibili'
           ? [
-              { bvid: 'BVmock0001', title: 'mock bili video', desc: 'mock bili desc', pic: PNG, pubdate: 1781110000, owner: { mid: 42, name: '测试UP', face: PNG }, stat: { view: 100, like: 5, danmaku: 2 } },
+              { bvid: 'BVmock0001', title: 'mock bili video', desc: 'mock bili desc', pic: PNG, duration: 125, pubdate: 1781110000, owner: { mid: 42, name: '测试UP', face: PNG }, stat: { view: 100, like: 5, danmaku: 2 } },
             ]
           : [
             { id: '8001', title: 'mock zhihu answer', excerpt: 'mock excerpt one', created_time: 1781100000, url: 'https://www.zhihu.com/question/1/answer/8001', author: { name: '测试作者', url: 'https://www.zhihu.com/people/mock-author' } },

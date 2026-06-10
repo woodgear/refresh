@@ -28,6 +28,8 @@ export interface MessageSpec {
   url?: string
   author?: AuthorSnapshot
   media: MediaRef[]
+  /** 视频时长，单位秒 */
+  durationSec?: number
   stats?: Record<string, number>
   refs?: { quoted?: string | null; replyTo?: string | null; replyToHandle?: string }
   /** 引用推文的轻量快照（复刻引用卡片用） */
@@ -364,6 +366,15 @@ function normalizeZhihuTopstory(raw: Raw): NormalizedItem | null {
 const fixUrl = (u: string | undefined): string | undefined =>
   u?.startsWith('//') ? `https:${u}` : u
 
+function parseBiliDurationText(text: string | undefined): number | undefined {
+  if (!text) return undefined
+  const parts = text.split(':')
+  if (parts.length < 2 || parts.length > 3) return undefined
+  const nums = parts.map(part => (/^\d+$/.test(part) ? Number(part) : NaN))
+  if (nums.some(n => !Number.isInteger(n))) return undefined
+  return nums.reduce((total, n) => total * 60 + n, 0)
+}
+
 function biliAuthor(mid: unknown, name?: string, face?: string) {
   const id = str(mid) ?? (num(mid) !== undefined ? String(mid) : undefined)
   const ref = id ? `bilibili-${id}` : null
@@ -387,6 +398,7 @@ function normalizeBiliPopular(raw: Raw): NormalizedItem | null {
   const { snapshot, author } = biliAuthor(owner.mid, str(owner.name), str(owner.face))
   const pubdate = num(raw.pubdate)
   const cover = fixUrl(str(raw.pic))
+  const durationSec = num(raw.duration)
   return {
     message: {
       name: `bilibili-${bvid}`,
@@ -399,6 +411,7 @@ function normalizeBiliPopular(raw: Raw): NormalizedItem | null {
         author: snapshot,
         // 设计约定：B 站只取封面图，不做视频播放采集
         media: cover ? [{ type: 'image', originUrl: cover, url: null }] : [],
+        ...(durationSec !== undefined ? { durationSec } : {}),
         stats: { views: num(raw.stat && stat.view) ?? 0, likes: num(stat.like) ?? 0, danmaku: num(stat.danmaku) ?? 0 },
         content: null,
       },
@@ -431,6 +444,7 @@ function normalizeBiliDynamic(raw: Raw): NormalizedItem | null {
     const bvid = str(archive.bvid)!
     const stat = (archive.stat ?? {}) as Raw
     const cover = fixUrl(str(archive.cover))
+    const durationSec = parseBiliDurationText(str(archive.duration_text))
     return {
       message: {
         name: `bilibili-${bvid}`, // 与热门流共用 bvid 命名，同一视频自动多源归属
@@ -441,6 +455,7 @@ function normalizeBiliDynamic(raw: Raw): NormalizedItem | null {
           text: descText ?? str(archive.desc),
           url: `https://www.bilibili.com/video/${bvid}`,
           media: cover ? [{ type: 'image', originUrl: cover, url: null }] : [],
+          ...(durationSec !== undefined ? { durationSec } : {}),
           stats: {
             views: parseInt(str(stat.play) ?? '0', 10) || num(stat.play) || 0,
             danmaku: parseInt(str(stat.danmaku) ?? '0', 10) || 0,
