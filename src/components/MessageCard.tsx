@@ -282,6 +282,12 @@ export function MessageCard({ message, onSeen, onToggleRead, layout = 'list' }: 
           </>
         ) : platform === 'bilibili' ? (
           <>
+            {durationLabel && (
+              <span className="flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                {durationLabel}
+              </span>
+            )}
             <span className="flex items-center gap-1">
               <Eye className="h-3 w-3" />
               {formatNumber(spec.stats?.views ?? 0)}
