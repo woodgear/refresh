@@ -127,6 +127,7 @@ export function MessageCard({ message, onSeen, onToggleRead, layout = 'list' }: 
   const cover = isGrid ? spec.media.find(m => m.type === 'image' || m.url || m.originUrl) : undefined
   const sources = messageSourceLabels(metadata)
   const durationLabel = platform === 'bilibili' && spec.durationSec !== undefined ? formatDuration(spec.durationSec) : null
+  const showPreviewText = !!spec.text && !(showContent && spec.content)
 
   return (
     <Card
@@ -199,7 +200,7 @@ export function MessageCard({ message, onSeen, onToggleRead, layout = 'list' }: 
       </CardHeader>
 
       <CardContent className="pb-2 space-y-2">
-        {spec.text && (
+        {showPreviewText && (
           <p className={cn('text-sm whitespace-pre-wrap', isGrid ? 'line-clamp-3 text-muted-foreground text-xs' : 'line-clamp-6')}>
             {spec.text}
           </p>
