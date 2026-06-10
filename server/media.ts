@@ -16,6 +16,8 @@ interface ManifestEntry {
 const MANIFEST_PATH = () => join(MEDIA_DIR, 'index.json')
 
 let manifest: Record<string, ManifestEntry> | null = null
+let saveQueue: Promise<unknown> = Promise.resolve()
+let tmpSeq = 0
 
 async function loadManifest(): Promise<Record<string, ManifestEntry>> {
   if (manifest) return manifest
@@ -27,11 +29,16 @@ async function loadManifest(): Promise<Record<string, ManifestEntry>> {
   return manifest
 }
 
-async function saveManifest(): Promise<void> {
-  if (!manifest) return
-  const tmp = `${MANIFEST_PATH()}.tmp-${process.pid}`
-  await writeFile(tmp, JSON.stringify(manifest, null, 2), 'utf-8')
-  await rename(tmp, MANIFEST_PATH())
+/** 并发下载时序列化保存，避免临时文件互相 rename 掉 */
+function saveManifest(): Promise<void> {
+  const p = saveQueue.then(async () => {
+    if (!manifest) return
+    const tmp = `${MANIFEST_PATH()}.tmp-${process.pid}-${++tmpSeq}`
+    await writeFile(tmp, JSON.stringify(manifest, null, 2), 'utf-8')
+    await rename(tmp, MANIFEST_PATH())
+  })
+  saveQueue = p.catch(() => {})
+  return p
 }
 
 const EXT_BY_MIME: Record<string, string> = {
@@ -54,16 +61,24 @@ function refererFor(url: string): string | undefined {
 
 // Bun 的 fetch 不读 macOS 系统代理；直连失败时经代理重试（pbs.twimg.com 等需翻墙的图床）
 const PROXY = process.env.RADAR_PROXY ?? process.env.HTTPS_PROXY ?? 'http://127.0.0.1:7890'
+// 同一 host 直连失败过就直接走代理，省掉每个 URL 都等一次直连超时
+const directFailedHosts = new Set<string>()
 
 async function fetchMaybeProxy(url: string, headers: Record<string, string>): Promise<Response> {
+  const host = url.startsWith('data:') ? null : new URL(url).hostname
+  const viaProxy = () => fetch(url, { headers, signal: AbortSignal.timeout(30_000), proxy: PROXY } as RequestInit)
+
+  if (host && directFailedHosts.has(host)) return viaProxy()
   try {
-    const res = await fetch(url, { headers, signal: AbortSignal.timeout(20_000) })
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(8_000) })
     if (res.ok) return res
     throw new Error(`http ${res.status}`)
   } catch (directErr) {
-    if (url.startsWith('data:')) throw directErr
+    if (!host) throw directErr
     try {
-      return await fetch(url, { headers, signal: AbortSignal.timeout(30_000), proxy: PROXY } as RequestInit)
+      const res = await viaProxy()
+      directFailedHosts.add(host)
+      return res
     } catch {
       throw directErr
     }

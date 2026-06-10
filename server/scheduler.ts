@@ -20,6 +20,8 @@ export function startScheduler(): void {
   }
   rlog('scheduler', `every ${Math.round(INTERVAL_MS / 1000)}s`)
   timer = setInterval(() => void runRound(), INTERVAL_MS)
+  // 启动后先补一轮（稍等让登录态预热先行），否则反复重启会导致永远等不满首个间隔
+  setTimeout(() => void runRound(), Math.min(INTERVAL_MS, 60_000))
 }
 
 export function stopScheduler(): void {
