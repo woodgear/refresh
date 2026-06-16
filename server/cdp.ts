@@ -39,6 +39,14 @@ function findChromeExecutable(): string | null {
   return candidates.find(p => existsSync(p)) ?? null
 }
 
+function chromeOzonePlatform(): string {
+  if (process.env.RADAR_CHROME_OZONE_PLATFORM !== undefined) return process.env.RADAR_CHROME_OZONE_PLATFORM
+  if (process.env.WAYLAND_DISPLAY) return 'wayland'
+  const runtimeDir = process.env.XDG_RUNTIME_DIR
+  if (runtimeDir && existsSync(join(runtimeDir, 'wayland-0'))) return 'wayland'
+  return ''
+}
+
 /** Chrome 不可用时自拉起（有头窗口，扫码登录要用）。返回是否可用。 */
 export async function ensureBrowser(log: (s: string) => void = () => {}): Promise<boolean> {
   if (await cdpAlive()) {
@@ -50,9 +58,9 @@ export async function ensureBrowser(log: (s: string) => void = () => {}): Promis
     log('no Chrome executable found (set RADAR_CHROME_BIN)')
     return false
   }
-  log(`launching Chrome (profile=${PROFILE_DIR}, cdp=${CDP_PORT})`)
   await mkdir(PROFILE_DIR, { recursive: true })
-  const ozonePlatform = process.env.RADAR_CHROME_OZONE_PLATFORM ?? (process.env.WAYLAND_DISPLAY ? 'wayland' : '')
+  const ozonePlatform = chromeOzonePlatform()
+  log(`launching Chrome (profile=${PROFILE_DIR}, cdp=${CDP_PORT}, ozone=${ozonePlatform || 'default'})`)
   const chromeArgs = [
     `--remote-debugging-port=${CDP_PORT}`,
     `--user-data-dir=${PROFILE_DIR}`,

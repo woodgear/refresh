@@ -28,6 +28,20 @@ if tmux has-session -t "$SESSION" 2>/dev/null; then
   tmux kill-session -t "$SESSION"
 fi
 
+kill_port() {
+  local port=$1
+  local pids
+  pids=$(ss -tlnp "sport = :$port" 2>/dev/null | sed -n 's/.*pid=\([0-9]\+\).*/\1/p' | sort -u)
+  if [ -n "$pids" ]; then
+    echo "Killing processes on port $port: $pids"
+    echo "$pids" | xargs kill 2>/dev/null || true
+    sleep 0.5
+  fi
+}
+
+kill_port "$SERVER_PORT"
+kill_port "$WEB_PORT"
+
 common='
 if [ -f ~/.env/.all.env ]; then set -a; source ~/.env/.all.env; set +a; fi
 uid=$(id -u)
