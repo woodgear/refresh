@@ -55,6 +55,6 @@ tmux new-session -d -s "$SESSION" -n server -c "$ROOT" \
   "$common; PORT=$SERVER_PORT RADAR_BASE_URL=$REFRESH_PUBLIC_URL bun server/index.ts 2>&1 | tee -a data/logs/refresh-k2-server.log"
 
 tmux new-window -t "$SESSION" -n web -c "$ROOT" \
-  "$common; REFRESH_API_TARGET=http://127.0.0.1:$SERVER_PORT REFRESH_ALLOWED_HOSTS=$PUBLIC_HOST bunx vite --host 127.0.0.1 --port $WEB_PORT 2>&1 | tee -a data/logs/refresh-k2-web.log"
+  "$common; REFRESH_API_TARGET=http://127.0.0.1:$SERVER_PORT REFRESH_ALLOWED_HOSTS=$PUBLIC_HOST bunx vite build && REFRESH_API_TARGET=http://127.0.0.1:$SERVER_PORT REFRESH_ALLOWED_HOSTS=$PUBLIC_HOST bunx vite preview --host 127.0.0.1 --port $WEB_PORT 2>&1 | tee -a data/logs/refresh-k2-web.log"
 
 tmux list-windows -t "$SESSION"

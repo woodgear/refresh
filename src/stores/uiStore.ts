@@ -4,7 +4,7 @@ import { persist } from 'zustand/middleware'
 interface UIStore {
   /** 'all' 或 source name */
   activeSource: string
-  view: 'feed' | 'windows' | 'admin'
+  view: 'feed' | 'windows' | 'followees' | 'admin'
   /** windows 视图中选中的 window */
   selectedWindow: string | null
   /** 阅读偏好（localStorage 持久化） */
@@ -14,7 +14,7 @@ interface UIStore {
   /** 每个源的布局偏好；未设置时 B 站默认网格、其他默认单列 */
   layouts: Record<string, 'list' | 'grid'>
   setActiveSource: (source: string) => void
-  setView: (view: 'feed' | 'windows' | 'admin') => void
+  setView: (view: 'feed' | 'windows' | 'followees' | 'admin') => void
   setSelectedWindow: (name: string | null) => void
   setSortMode: (mode: 'time' | 'unread-first') => void
   setUnreadOnly: (v: boolean) => void

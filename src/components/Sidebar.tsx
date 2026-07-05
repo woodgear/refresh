@@ -1,8 +1,8 @@
-import { useState } from 'react'
 import { useUIStore } from '@/stores/uiStore'
 import { cn } from '@/lib/utils'
-import { SOURCES, createRefreshWindow, useAccounts, useInvalidate, useUnreadCounts, watchRefreshWindow } from '@/api/radar'
-import { Sparkles, RefreshCw, Layers, Rss, Settings } from 'lucide-react'
+import { SOURCES, useAccounts, useUnreadCounts } from '@/api/radar'
+import { useRefreshSources } from '@/hooks/useRefreshSources'
+import { Sparkles, RefreshCw, Layers, Rss, Settings, Users } from 'lucide-react'
 
 const AUTH_DOT: Record<string, string> = {
   ok: 'bg-green-500',
@@ -11,13 +11,11 @@ const AUTH_DOT: Record<string, string> = {
   unknown: 'bg-gray-400',
 }
 
-export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
+export function Sidebar({ onNavigate, className }: { onNavigate?: () => void; className?: string }) {
   const { activeSource, setActiveSource, view, setView } = useUIStore()
   const accounts = useAccounts()
   const unread = useUnreadCounts()
-  const invalidate = useInvalidate()
-  const [refreshing, setRefreshing] = useState<Set<string>>(new Set())
-  const [lastResult, setLastResult] = useState<string | null>(null)
+  const { refreshing, lastResult, refreshSources } = useRefreshSources()
 
   const nav = (fn: () => void) => () => {
     fn()
@@ -27,63 +25,21 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const authOf = (account: string) =>
     accounts.data?.find(a => a.metadata.name === account)?.status.auth ?? 'unknown'
 
-  const refreshSources = (targets: string[]) => {
-    setLastResult(null)
-    setRefreshing(prev => new Set([...prev, ...targets]))
-    let failed = 0
-    let remaining = targets.length
-    const finishOne = (source: string) => {
-      setRefreshing(prev => {
-        const next = new Set(prev)
-        next.delete(source)
-        return next
-      })
-      remaining--
-      if (remaining <= 0) {
-        setLastResult(failed > 0 ? `${failed} 个源失败，详见管理页日志` : '完成')
-        invalidate()
-      }
-    }
-    for (const source of targets) {
-      createRefreshWindow(source)
-        .then(win =>
-          watchRefreshWindow(
-            win.metadata.name,
-            () => {},
-            result => {
-              if (result.phase === 'Failed') failed++
-              finishOne(source)
-            },
-          ),
-        )
-        .catch(() => {
-          failed++
-          finishOne(source)
-        })
-    }
-  }
-
-  const platforms = [
-    { platform: 'zhihu' as const, label: '知乎', account: 'zhihu-main' },
-    { platform: 'twitter' as const, label: '推特', account: 'twitter-main' },
-    { platform: 'bilibili' as const, label: 'B站', account: 'bilibili-main' },
-  ]
-
   const anyRefreshing = refreshing.size > 0
 
   return (
-    <div className="w-52 border-r bg-background md:bg-muted/30 flex flex-col h-full">
-      <div className="p-4 border-b">
-        <h1 className="font-semibold text-lg">Refresh</h1>
+    <div className={cn('flex h-full w-56 flex-col border-r bg-muted/25 md:bg-muted/35', className)}>
+      <div className="border-b px-4 py-4">
+        <h1 className="text-lg font-semibold leading-6">Refresh</h1>
         <p className="text-xs text-muted-foreground">信息雷达</p>
       </div>
 
-      <nav className="flex-1 p-2 space-y-1 overflow-y-auto">
+      <nav className="flex-1 space-y-1 overflow-y-auto p-2">
         <button
           onClick={nav(() => setActiveSource('all'))}
           className={cn(
-            'w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors hover:bg-accent',
-            view === 'feed' && activeSource === 'all' && 'bg-primary text-primary-foreground hover:bg-primary',
+            'flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors hover:bg-background/80',
+            view === 'feed' && activeSource === 'all' && 'bg-background text-foreground shadow-sm ring-1 ring-border',
           )}
         >
           <Sparkles className="h-4 w-4" />
@@ -95,7 +51,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
 
         {platforms.map(p => (
           <div key={p.platform} className="space-y-0.5">
-            <div className="flex items-center gap-2 px-3 pt-2 pb-1 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2 px-3 pb-1 pt-3 text-xs font-medium text-muted-foreground">
               <span className={cn('w-2 h-2 rounded-full', AUTH_DOT[authOf(p.account)])} title={authOf(p.account)} />
               {p.label}
             </div>
@@ -106,14 +62,14 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                   <button
                     onClick={nav(() => setActiveSource(source.name))}
                     className={cn(
-                      'flex-1 flex items-center gap-1 px-3 py-1.5 text-sm rounded-md transition-colors hover:bg-accent text-left',
+                      'flex flex-1 items-center gap-1 rounded-md px-3 py-1.5 text-left text-sm transition-colors hover:bg-background/80',
                       view === 'feed' && activeSource === source.name &&
-                        'bg-primary text-primary-foreground hover:bg-primary',
+                        'bg-background text-foreground shadow-sm ring-1 ring-border',
                     )}
                   >
                     {source.label.split(' · ')[1]}
                     {(unread.data?.sources?.[source.name] ?? 0) > 0 && (
-                      <span className="ml-auto text-xs tabular-nums opacity-70">
+                      <span className="ml-auto rounded-sm bg-foreground/10 px-1.5 py-0.5 text-[11px] tabular-nums text-foreground/80">
                         {unread.data!.sources[source.name]}
                       </span>
                     )}
@@ -123,7 +79,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                     disabled={busy}
                     title={`立即刷新 ${source.label}`}
                     className={cn(
-                      'p-1.5 rounded text-muted-foreground hover:bg-accent hover:text-foreground transition-opacity',
+                      'rounded p-1.5 text-muted-foreground transition-opacity hover:bg-background/80 hover:text-foreground disabled:opacity-50',
                       // 触屏没有 hover，移动端常显
                       busy ? 'opacity-100' : 'opacity-100 md:opacity-0 md:group-hover:opacity-100',
                     )}
@@ -138,10 +94,20 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
 
         <div className="pt-2 border-t mt-2 space-y-1">
           <button
+            onClick={nav(() => setView(view === 'followees' ? 'feed' : 'followees'))}
+            className={cn(
+              'flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors hover:bg-background/80',
+              view === 'followees' && 'bg-background text-foreground shadow-sm ring-1 ring-border',
+            )}
+          >
+            <Users className="h-4 w-4" />
+            关注列表
+          </button>
+          <button
             onClick={nav(() => setView(view === 'windows' ? 'feed' : 'windows'))}
             className={cn(
-              'w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors hover:bg-accent',
-              view === 'windows' && 'bg-primary text-primary-foreground hover:bg-primary',
+              'flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors hover:bg-background/80',
+              view === 'windows' && 'bg-background text-foreground shadow-sm ring-1 ring-border',
             )}
           >
             <Layers className="h-4 w-4" />
@@ -150,8 +116,8 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           <button
             onClick={nav(() => setView(view === 'admin' ? 'feed' : 'admin'))}
             className={cn(
-              'w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors hover:bg-accent',
-              view === 'admin' && 'bg-primary text-primary-foreground hover:bg-primary',
+              'flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors hover:bg-background/80',
+              view === 'admin' && 'bg-background text-foreground shadow-sm ring-1 ring-border',
             )}
           >
             <Settings className="h-4 w-4" />
@@ -160,11 +126,11 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         </div>
       </nav>
 
-      <div className="p-3 border-t text-xs text-muted-foreground space-y-2">
+      <div className="space-y-2 border-t p-3 text-xs text-muted-foreground">
         <button
           onClick={() => refreshSources(activeSource === 'all' || view !== 'feed' ? SOURCES.map(s => s.name) : [activeSource])}
           disabled={anyRefreshing}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md border bg-background hover:bg-accent transition-colors disabled:opacity-50 text-foreground"
+          className="flex w-full items-center justify-center gap-2 rounded-md border bg-background px-3 py-2 text-foreground transition-colors hover:bg-accent disabled:opacity-50"
         >
           <RefreshCw className={cn('h-3.5 w-3.5', anyRefreshing && 'animate-spin')} />
           {anyRefreshing ? `抓取中 (${refreshing.size})…` : `刷新${activeSource === 'all' || view !== 'feed' ? '全部' : '当前源'}`}
@@ -183,3 +149,9 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     </div>
   )
 }
+
+const platforms = [
+  { platform: 'zhihu' as const, label: '知乎', account: 'zhihu-main' },
+  { platform: 'twitter' as const, label: '推特', account: 'twitter-main' },
+  { platform: 'bilibili' as const, label: 'B站', account: 'bilibili-main' },
+]

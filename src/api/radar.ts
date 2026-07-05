@@ -61,6 +61,60 @@ export interface RefreshWindow {
   }
 }
 
+export interface Followee {
+  apiVersion: string
+  kind: 'Followee'
+  metadata: ResourceMeta
+  spec: {
+    platformId: string
+    handle: string | null
+    displayName: string
+    avatar: string | null
+    url: string
+    description: string | null
+    raw?: unknown
+  }
+  status: {
+    following: boolean
+    firstSeenAt: string
+    lastSeenFollowingAt: string | null
+    lastSyncedAt: string
+    [k: string]: unknown
+  }
+}
+
+export interface FolloweeWindow {
+  kind: 'FolloweeWindow'
+  metadata: ResourceMeta
+  spec: { account: string; trigger: string }
+  status: {
+    phase: 'Running' | 'Succeeded' | 'Failed'
+    complete: boolean
+    stats?: { seen: number; unfollowed: number } | null
+    error?: string | null
+  }
+}
+
+export interface FolloweeExport {
+  apiVersion: string
+  kind: 'FolloweeExport'
+  exportedAt: string
+  count: number
+  items: {
+    platform: string
+    account: string
+    platformId: string
+    handle: string | null
+    displayName: string
+    avatar: string | null
+    url: string
+    description: string | null
+    group: string[]
+    labels: Record<string, string>
+    note: string
+  }[]
+}
+
 export interface LoginChallenge {
   fields: { name: string; label: string; kind: 'text' | 'password' }[]
   note?: string
@@ -143,6 +197,34 @@ export function useWindows() {
   })
 }
 
+export function useFollowees(opts?: { platform?: string; labelSelector?: string; includeNotFollowing?: boolean; limit?: number; offset?: number }) {
+  const params = new URLSearchParams()
+  if (opts?.platform && opts.platform !== 'all') params.set('platform', opts.platform)
+  if (opts?.labelSelector) params.set('labelSelector', opts.labelSelector)
+  if (opts?.includeNotFollowing) params.set('includeNotFollowing', 'true')
+  params.set('limit', String(opts?.limit ?? 200))
+  params.set('offset', String(opts?.offset ?? 0))
+  return useQuery({
+    queryKey: ['followees', opts?.platform ?? 'all', opts?.labelSelector ?? '', opts?.includeNotFollowing ?? false, opts?.limit ?? 200, opts?.offset ?? 0],
+    queryFn: () => getJson<{ items: Followee[]; total: number; offset: number; limit: number }>(`/api/v1/followees?${params}`),
+  })
+}
+
+export function useFolloweeWindows() {
+  return useQuery({
+    queryKey: ['followee-windows'],
+    queryFn: () => getJson<{ items: FolloweeWindow[] }>('/api/v1/followeewindows').then(r => r.items),
+  })
+}
+
+export function listFolloweeWindows(): Promise<FolloweeWindow[]> {
+  return getJson<{ items: FolloweeWindow[] }>('/api/v1/followeewindows').then(r => r.items)
+}
+
+export function getFolloweeWindow(name: string): Promise<FolloweeWindow> {
+  return getJson(`/api/v1/followeewindows/${name}`)
+}
+
 export interface LogTail {
   dates: string[]
   date: string
@@ -200,6 +282,8 @@ export function useInvalidate() {
   return () => {
     void qc.invalidateQueries({ queryKey: ['messages'] })
     void qc.invalidateQueries({ queryKey: ['windows'] })
+    void qc.invalidateQueries({ queryKey: ['followees'] })
+    void qc.invalidateQueries({ queryKey: ['followee-windows'] })
     void qc.invalidateQueries({ queryKey: ['accounts'] })
   }
 }
@@ -208,6 +292,18 @@ export function useInvalidate() {
 
 export function createRefreshWindow(source: string, count?: number): Promise<RefreshWindow> {
   return send('POST', '/api/v1/refreshwindows', { spec: { source, count, trigger: 'manual' } })
+}
+
+export function syncFollowees(account?: string): Promise<{ items: FolloweeWindow[] }> {
+  return send('POST', '/api/v1/followeewindows', { spec: account ? { account } : {} })
+}
+
+export function patchFollowee(name: string, patch: { labels?: Record<string, string | null>; annotations?: Record<string, string | null> }): Promise<Followee> {
+  return send('PATCH', `/api/v1/followees/${name}`, patch)
+}
+
+export function exportFollowees(): Promise<FolloweeExport> {
+  return getJson('/api/v1/followees/export')
 }
 
 /** 订阅 refresh window 的 SSE 进度；返回取消函数 */

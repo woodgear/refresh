@@ -1,13 +1,33 @@
-import { mkdir, readFile, readdir, rename, writeFile } from 'fs/promises'
-import { existsSync } from 'fs'
+import { mkdir } from 'fs/promises'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import {
+  initResourceStore,
+  listResourceNames,
+  putWindowFile,
+  readWindowFileFromStore,
+  updateWindowStatusInStore,
+  putFolloweeWindowFile,
+  readFolloweeWindowFileFromStore,
+  readOverlayFromStore,
+  patchOverlayInStore,
+  patchOverlayManyInStore,
+  readSchedulerSpecFromStore as resourceReadSchedulerSpec,
+  writeSchedulerSpecToStore as resourceWriteSchedulerSpec,
+  readMediaManifestFromStore as resourceReadMediaManifest,
+  putMediaObject as resourcePutMediaObject,
+  putResource as resourcePutResource,
+  getResource as resourceGetResource,
+  listResources as resourceListResources,
+} from './resource-store'
+import { FolloweeWindowResource, RefreshWindowResource, type ResourceDefinition } from './resource-definitions'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 // 可被测试覆盖的根目录（RADAR_DATA_DIR 环境变量优先）
 export const DATA_DIR = process.env.RADAR_DATA_DIR ?? join(__dirname, '..', 'data')
 export const WINDOWS_DIR = join(DATA_DIR, 'windows')
+export const FOLLOWEE_WINDOWS_DIR = join(DATA_DIR, 'followee-windows')
 export const OVERLAY_DIR = join(DATA_DIR, 'overlay')
 export const MEDIA_DIR = join(DATA_DIR, 'media')
 
@@ -35,47 +55,38 @@ export interface WindowFile extends Resource {
   rawItems: unknown[]
 }
 
+export interface FolloweeWindowFile extends Resource {
+  kind: 'FolloweeWindow'
+  rawItems: unknown[]
+}
+
 // ---------- 初始化 ----------
 
 export async function ensureDirs(): Promise<void> {
   await Promise.all([
     mkdir(WINDOWS_DIR, { recursive: true }),
+    mkdir(FOLLOWEE_WINDOWS_DIR, { recursive: true }),
     mkdir(OVERLAY_DIR, { recursive: true }),
     mkdir(MEDIA_DIR, { recursive: true }),
   ])
+  await initResourceStore({ dataDir: DATA_DIR, windowsDir: WINDOWS_DIR, followeeWindowsDir: FOLLOWEE_WINDOWS_DIR, overlayDir: OVERLAY_DIR, mediaDir: MEDIA_DIR })
 }
 
 // ---------- Window 档案（只追加，不可变） ----------
 
-function windowPath(name: string): string {
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) {
-    throw new Error(`invalid window name: ${name}`)
-  }
-  return join(WINDOWS_DIR, `${name}.json`)
-}
-
 export async function listWindowNames(): Promise<string[]> {
   await ensureDirs()
-  const files = await readdir(WINDOWS_DIR)
-  return files
-    .filter(f => f.endsWith('.json'))
-    .map(f => f.slice(0, -'.json'.length))
-    .sort()
+  return listResourceNames(RefreshWindowResource)
 }
 
 export async function readWindowFile(name: string): Promise<WindowFile> {
-  const content = await readFile(windowPath(name), 'utf-8')
-  return JSON.parse(content) as WindowFile
+  return readWindowFileFromStore(name)
 }
 
 /** 追加一个 window 档案。档案不可变：重名即报错，绝不覆盖。 */
 export async function appendWindow(win: WindowFile): Promise<void> {
   await ensureDirs()
-  const path = windowPath(win.metadata.name)
-  if (existsSync(path)) {
-    throw new Error(`window already exists (archives are immutable): ${win.metadata.name}`)
-  }
-  await atomicWrite(path, JSON.stringify(win, null, 2))
+  await putWindowFile(win)
 }
 
 /**
@@ -83,10 +94,23 @@ export async function appendWindow(win: WindowFile): Promise<void> {
  * 只允许更新 status，spec/rawItems 一经写入不可变。
  */
 export async function updateWindowStatus(name: string, status: unknown): Promise<WindowFile> {
-  const win = await readWindowFile(name)
-  win.status = status
-  await atomicWrite(windowPath(name), JSON.stringify(win, null, 2))
-  return win
+  return updateWindowStatusInStore(name, status)
+}
+
+// ---------- FolloweeWindow 档案（只追加，不可变） ----------
+
+export async function listFolloweeWindowNames(): Promise<string[]> {
+  await ensureDirs()
+  return listResourceNames(FolloweeWindowResource)
+}
+
+export async function readFolloweeWindowFile(name: string): Promise<FolloweeWindowFile> {
+  return readFolloweeWindowFileFromStore(name)
+}
+
+export async function appendFolloweeWindow(win: FolloweeWindowFile): Promise<void> {
+  await ensureDirs()
+  await putFolloweeWindowFile(win)
 }
 
 // ---------- Overlay（可变用户态，按 kind 一个文件） ----------
@@ -99,19 +123,12 @@ export interface OverlayEntry {
 
 export type OverlayMap = Record<string, OverlayEntry>
 
-const OVERLAY_KINDS = ['messages', 'authors'] as const
+const OVERLAY_KINDS = ['messages', 'authors', 'followees'] as const
 export type OverlayKind = (typeof OVERLAY_KINDS)[number]
 
-function overlayPath(kind: OverlayKind): string {
-  return join(OVERLAY_DIR, `${kind}.json`)
-}
-
 export async function readOverlay(kind: OverlayKind): Promise<OverlayMap> {
-  try {
-    return JSON.parse(await readFile(overlayPath(kind), 'utf-8')) as OverlayMap
-  } catch {
-    return {}
-  }
+  await ensureDirs()
+  return readOverlayFromStore(kind)
 }
 
 /**
@@ -124,42 +141,13 @@ export async function patchOverlay(
   patch: OverlayEntry,
 ): Promise<OverlayEntry> {
   await ensureDirs()
-  const all = await readOverlay(kind)
-  const entry = all[name] ?? {}
-  for (const section of ['labels', 'annotations', 'status'] as const) {
-    const p = patch[section]
-    if (!p) continue
-    const merged: Record<string, unknown> = { ...(entry[section] ?? {}) }
-    for (const [k, v] of Object.entries(p)) {
-      if (v === null) delete merged[k]
-      else merged[k] = v
-    }
-    entry[section] = merged as never
-  }
-  all[name] = entry
-  await atomicWrite(overlayPath(kind), JSON.stringify(all, null, 2))
-  return entry
+  return patchOverlayInStore(kind, name, patch)
 }
 
 /** 批量合并多个 entry（单次读写文件），mark-read 这类批量操作用 */
 export async function patchOverlayMany(kind: OverlayKind, patches: Record<string, OverlayEntry>): Promise<void> {
   await ensureDirs()
-  const all = await readOverlay(kind)
-  for (const [name, patch] of Object.entries(patches)) {
-    const entry = all[name] ?? {}
-    for (const section of ['labels', 'annotations', 'status'] as const) {
-      const p = patch[section]
-      if (!p) continue
-      const merged: Record<string, unknown> = { ...(entry[section] ?? {}) }
-      for (const [k, v] of Object.entries(p)) {
-        if (v === null) delete merged[k]
-        else merged[k] = v
-      }
-      entry[section] = merged as never
-    }
-    all[name] = entry
-  }
-  await atomicWrite(overlayPath(kind), JSON.stringify(all, null, 2))
+  await patchOverlayManyInStore(kind, patches)
 }
 
 /** 档案派生的资源 + overlay 用户态 → 完整对象。overlay 的 labels/annotations 浅覆盖，status 浅合并。 */
@@ -179,10 +167,39 @@ export function applyOverlay<S, T extends Record<string, unknown>>(
   }
 }
 
-// ---------- 工具 ----------
+// ---------- Singleton / manifest resources ----------
 
-async function atomicWrite(path: string, content: string): Promise<void> {
-  const tmp = `${path}.tmp-${process.pid}`
-  await writeFile(tmp, content, 'utf-8')
-  await rename(tmp, path)
+export async function readSchedulerSpecFromStore(): Promise<Record<string, unknown> | null> {
+  await ensureDirs()
+  return resourceReadSchedulerSpec()
+}
+
+export async function writeSchedulerSpecToStore(spec: Record<string, unknown>): Promise<void> {
+  await ensureDirs()
+  await resourceWriteSchedulerSpec(spec)
+}
+
+export async function readMediaManifestFromStore(): Promise<Record<string, { file: string; bytes: number }>> {
+  await ensureDirs()
+  return resourceReadMediaManifest()
+}
+
+export async function putMediaObject(originUrl: string, entry: { file: string; bytes: number }): Promise<void> {
+  await ensureDirs()
+  await resourcePutMediaObject(originUrl, entry)
+}
+
+export async function putStoredResource(resource: Resource): Promise<void> {
+  await ensureDirs()
+  await resourcePutResource(resource)
+}
+
+export async function getStoredResource(definition: ResourceDefinition, name: string): Promise<Resource | null> {
+  await ensureDirs()
+  return resourceGetResource(definition, name)
+}
+
+export async function listStoredResources(definition: ResourceDefinition): Promise<Resource[]> {
+  await ensureDirs()
+  return resourceListResources(definition)
 }

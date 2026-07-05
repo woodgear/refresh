@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { defaultLayout, useUIStore } from '@/stores/uiStore'
 import { MessageCard } from '@/components/MessageCard'
 import { AdminPage } from '@/components/AdminPage'
+import { FolloweesPage } from '@/components/FolloweesPage'
 import {
   markRead,
   setMessageRead,
@@ -24,6 +25,7 @@ export const Route = createFileRoute('/')({
 function HomePage() {
   const view = useUIStore(s => s.view)
   if (view === 'admin') return <AdminPage />
+  if (view === 'followees') return <FolloweesPage />
   return view === 'windows' ? <WindowsPage /> : <FeedPage />
 }
 
@@ -81,55 +83,74 @@ function FeedPage() {
 
   const items = messages.data ?? []
   return (
-    <div className="h-full flex flex-col">
-      <div className="border-b px-3 md:px-4 py-2 flex items-center gap-3 md:gap-4 text-xs text-muted-foreground bg-background overflow-x-auto whitespace-nowrap [&>*]:shrink-0">
-        <span className="font-medium text-foreground tabular-nums">{unreadCount ?? 0} 未读</span>
-        <div className="flex items-center gap-1">
-          {(['unread-first', 'time'] as const).map(mode => (
+    <div className="flex h-full flex-col">
+      <div className="border-b bg-background/95 px-3 py-2 text-xs text-muted-foreground md:px-5">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="font-medium text-foreground tabular-nums">{unreadCount ?? 0} 未读</span>
+            <div className="flex items-center gap-1 rounded-md border bg-muted/30 p-0.5">
+              {(['unread-first', 'time'] as const).map(mode => (
+                <button
+                  key={mode}
+                  onClick={() => setSortMode(mode)}
+                  className={cn(
+                    'rounded-sm px-2 py-0.5 transition-colors',
+                    sortMode === mode ? 'bg-background text-foreground shadow-sm' : 'hover:text-foreground',
+                  )}
+                >
+                  {mode === 'unread-first' ? '未读优先' : '按时间'}
+                </button>
+              ))}
+            </div>
             <button
-              key={mode}
-              onClick={() => setSortMode(mode)}
-              className={cn(
-                'px-2 py-0.5 rounded',
-                sortMode === mode ? 'bg-primary text-primary-foreground' : 'hover:bg-accent',
-              )}
+              onClick={() => void handleMarkAll()}
+              className="ml-auto flex items-center gap-1 rounded px-2 py-1 hover:bg-accent hover:text-foreground md:hidden"
+              title="全部已读"
             >
-              {mode === 'unread-first' ? '未读优先' : '按时间'}
+              <CheckCheck className="h-3.5 w-3.5" />
             </button>
-          ))}
+          </div>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 md:flex-1 md:flex-nowrap">
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input type="checkbox" checked={unreadOnly} onChange={e => setUnreadOnly(e.target.checked)} />
+              只看未读
+            </label>
+            <label className="flex items-center gap-1 cursor-pointer" title="卡片在视口停留 1.5 秒自动标记已读">
+              <input type="checkbox" checked={autoRead} onChange={e => setAutoRead(e.target.checked)} />
+              滚动已读
+            </label>
+            <div className="ml-auto flex items-center gap-0.5 rounded-md border bg-muted/30 p-0.5" title="布局（按源记忆）">
+              <button
+                onClick={() => setLayout(activeSource, 'list')}
+                className={cn(
+                  'rounded-sm p-1 transition-colors',
+                  layout === 'list' ? 'bg-background text-foreground shadow-sm' : 'hover:text-foreground',
+                )}
+              >
+                <List className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => setLayout(activeSource, 'grid')}
+                className={cn(
+                  'rounded-sm p-1 transition-colors',
+                  layout === 'grid' ? 'bg-background text-foreground shadow-sm' : 'hover:text-foreground',
+                )}
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <button
+              onClick={() => void handleMarkAll()}
+              className="ml-auto hidden items-center gap-1 rounded px-2 py-1 hover:bg-accent hover:text-foreground md:flex"
+            >
+              <CheckCheck className="h-3.5 w-3.5" />
+              全部已读
+            </button>
+          </div>
         </div>
-        <label className="flex items-center gap-1 cursor-pointer">
-          <input type="checkbox" checked={unreadOnly} onChange={e => setUnreadOnly(e.target.checked)} />
-          只看未读
-        </label>
-        <label className="flex items-center gap-1 cursor-pointer" title="卡片在视口停留 1.5 秒自动标记已读">
-          <input type="checkbox" checked={autoRead} onChange={e => setAutoRead(e.target.checked)} />
-          滚动已读
-        </label>
-        <div className="flex items-center gap-0.5" title="布局（按源记忆）">
-          <button
-            onClick={() => setLayout(activeSource, 'list')}
-            className={cn('p-1 rounded', layout === 'list' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent')}
-          >
-            <List className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={() => setLayout(activeSource, 'grid')}
-            className={cn('p-1 rounded', layout === 'grid' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent')}
-          >
-            <LayoutGrid className="h-3.5 w-3.5" />
-          </button>
-        </div>
-        <button
-          onClick={() => void handleMarkAll()}
-          className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded hover:bg-accent"
-        >
-          <CheckCheck className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">全部已读</span>
-        </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto px-3 py-4 md:px-6 lg:px-8">
         {messages.isLoading && (
           <div className="flex justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -138,19 +159,25 @@ function FeedPage() {
         {messages.error && (
           <p className="text-center text-destructive py-8">加载失败: {(messages.error as Error).message}</p>
         )}
-        <div className={cn(layout === 'grid' ? 'max-w-6xl mx-auto columns-2 xl:columns-3 gap-4' : 'max-w-2xl mx-auto space-y-4')}>
+        <div
+          className={cn(
+            layout === 'grid'
+              ? 'mx-auto max-w-7xl columns-1 gap-4 md:columns-2 2xl:columns-3'
+              : 'mx-auto max-w-5xl space-y-3',
+          )}
+        >
           {items.map(m => (
             <MessageCard
               key={m.metadata.name}
               message={m}
               layout={layout}
               onToggleRead={toggleRead}
-              onSeen={autoRead ? name => pending.current.add(name) : undefined}
+              onSeen={autoRead ? name => batchRead([name]) : undefined}
             />
           ))}
           {!messages.isLoading && items.length === 0 && (
-            <div className="text-center text-muted-foreground py-8">
-              {unreadOnly ? '没有未读内容 🎉' : '暂无内容，点左下角刷新抓一轮'}
+            <div className="rounded-md border border-dashed bg-background/60 py-10 text-center text-sm text-muted-foreground">
+              {unreadOnly ? '没有未读内容' : '暂无内容，点左下角刷新抓一轮'}
             </div>
           )}
         </div>

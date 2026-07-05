@@ -5,16 +5,28 @@ import { rssApp } from './rss'
 import { ensureDirs } from './store'
 import { initMedia } from './media'
 import { buildIndex } from './resources'
+import { buildFolloweeIndex } from './followees'
 import { initScheduler } from './scheduler'
 import { rlog } from './logger'
+import { metricsText, recordHttp } from './observability'
 
 const app = new Hono()
 app.use('*', cors())
+app.use('*', async (c, next) => {
+  const startedAt = performance.now()
+  try {
+    await next()
+  } finally {
+    recordHttp(c.req.method, c.req.path, c.res.status, performance.now() - startedAt)
+  }
+})
+app.get('/metrics', () => new Response(metricsText(), { headers: { 'Content-Type': 'text/plain; version=0.0.4' } }))
 
 // 资源 API + RSS（docs/design.md）
 await ensureDirs()
 await initMedia()
 await buildIndex()
+await buildFolloweeIndex()
 app.route('/api/v1', apiV1)
 app.route('/rss', rssApp)
 

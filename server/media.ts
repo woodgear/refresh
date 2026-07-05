@@ -1,45 +1,19 @@
 // 媒体本地化（docs/design.md §6）：抓取时下载图片/头像到 data/media/<sha256>.<ext>，
-// originUrl → 本地文件的映射存 manifest（data/media/index.json），重建索引时据此回填 spec.media[].url。
+// originUrl → 本地文件的映射由 ResourceStore 里的 MediaObject 资源维护。
 // 视频不下载（只存 poster + playUrl）。知乎图床有 referer 防盗链，下载时带 referer。
 
 import { createHash } from 'crypto'
-import { readFile, writeFile, rename } from 'fs/promises'
+import { writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { join } from 'path'
-import { MEDIA_DIR, ensureDirs } from './store'
+import { MEDIA_DIR, ensureDirs, readMediaManifestFromStore, putMediaObject } from './store'
 
 interface ManifestEntry {
   file: string // <sha256>.<ext>
   bytes: number
 }
 
-const MANIFEST_PATH = () => join(MEDIA_DIR, 'index.json')
-
 let manifest: Record<string, ManifestEntry> | null = null
-let saveQueue: Promise<unknown> = Promise.resolve()
-let tmpSeq = 0
-
-async function loadManifest(): Promise<Record<string, ManifestEntry>> {
-  if (manifest) return manifest
-  try {
-    manifest = JSON.parse(await readFile(MANIFEST_PATH(), 'utf-8')) as Record<string, ManifestEntry>
-  } catch {
-    manifest = {}
-  }
-  return manifest
-}
-
-/** 并发下载时序列化保存，避免临时文件互相 rename 掉 */
-function saveManifest(): Promise<void> {
-  const p = saveQueue.then(async () => {
-    if (!manifest) return
-    const tmp = `${MANIFEST_PATH()}.tmp-${process.pid}-${++tmpSeq}`
-    await writeFile(tmp, JSON.stringify(manifest, null, 2), 'utf-8')
-    await rename(tmp, MANIFEST_PATH())
-  })
-  saveQueue = p.catch(() => {})
-  return p
-}
 
 const EXT_BY_MIME: Record<string, string> = {
   'image/jpeg': 'jpg',
@@ -94,7 +68,7 @@ export function localMediaUrl(originUrl: string): string | null {
 /** 下载并登记一个媒体 URL（幂等）；失败返回 null，不抛 */
 export async function downloadMedia(originUrl: string, log: (s: string) => void = () => {}): Promise<string | null> {
   await ensureDirs()
-  const m = await loadManifest()
+  const m = manifest ?? (manifest = await readMediaManifestFromStore())
   if (m[originUrl]) return `/api/v1/media/${m[originUrl].file}`
   try {
     const referer = refererFor(originUrl)
@@ -110,7 +84,7 @@ export async function downloadMedia(originUrl: string, log: (s: string) => void 
     const path = join(MEDIA_DIR, file)
     if (!existsSync(path)) await writeFile(path, bytes)
     m[originUrl] = { file, bytes: bytes.length }
-    await saveManifest()
+    await putMediaObject(originUrl, m[originUrl])
     return `/api/v1/media/${file}`
   } catch (err) {
     log(`media download failed: ${originUrl.slice(0, 80)}: ${err instanceof Error ? err.message : err}`)
@@ -141,7 +115,7 @@ export async function downloadAll(urls: string[], log: (s: string) => void, conc
 }
 
 export async function initMedia(): Promise<void> {
-  await loadManifest()
+  manifest = await readMediaManifestFromStore()
 }
 
 export function mediaFilePath(file: string): string | null {

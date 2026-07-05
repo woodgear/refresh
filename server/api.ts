@@ -11,10 +11,19 @@ import {
   listWindowResources,
   unreadCounts,
 } from './resources'
+import {
+  createFolloweeWindows,
+  exportFollowees,
+  getFollowee,
+  getFolloweeWindowResource,
+  queryFollowees,
+  listFolloweeWindowResources,
+} from './followees'
 import { createRefreshWindow, getRunningWindow, runningWindowResources, watchWindow } from './refresh'
 import { patchOverlay, patchOverlayMany, type OverlayEntry } from './store'
 import { mediaFilePath, MIME_BY_EXT, isAllowedMediaHost, proxyMediaFetch } from './media'
 import { readFile } from 'fs/promises'
+import { observabilitySummary, recordRum } from './observability'
 
 export const apiV1 = new Hono()
 
@@ -113,6 +122,66 @@ apiV1.patch('/authors/:name', async c => {
   const patch = (await c.req.json()) as OverlayEntry
   await patchOverlay('authors', name, patch)
   return c.json(await getAuthor(name))
+})
+
+// ---------- followees ----------
+
+apiV1.get('/followees', async c => {
+  try {
+    const page = await queryFollowees({
+      labelSelector: c.req.query('labelSelector'),
+      platform: c.req.query('platform'),
+      includeNotFollowing: c.req.query('includeNotFollowing') === 'true',
+      limit: intParam(c.req.query('limit')),
+      offset: intParam(c.req.query('offset')),
+    })
+    return c.json({ ...list('Followee', page.items), total: page.total, offset: page.offset, limit: page.limit })
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+  }
+})
+
+apiV1.get('/followees/export', async c => c.json(await exportFollowees()))
+
+apiV1.get('/followees/:name', async c => {
+  const f = await getFollowee(c.req.param('name'))
+  return f ? c.json(f) : c.json({ error: 'not found' }, 404)
+})
+
+apiV1.patch('/followees/:name', async c => {
+  const name = c.req.param('name')
+  if (!(await getFollowee(name))) return c.json({ error: 'not found' }, 404)
+  const patch = (await c.req.json()) as OverlayEntry
+  await patchOverlay('followees', name, patch)
+  return c.json(await getFollowee(name))
+})
+
+apiV1.post('/followeewindows', async c => {
+  let body: Record<string, unknown> = {}
+  try {
+    body = (await c.req.json()) as Record<string, unknown>
+  } catch {
+    return c.json({ error: 'invalid JSON body' }, 400)
+  }
+  const spec = (body.spec ?? body) as Record<string, unknown>
+  try {
+    const items = await createFolloweeWindows({
+      account: typeof spec.account === 'string' && spec.account ? spec.account : undefined,
+      trigger: 'manual',
+    })
+    return c.json(list('FolloweeWindow', items), 202)
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+  }
+})
+
+apiV1.get('/followeewindows', async c => {
+  return c.json(list('FolloweeWindow', listFolloweeWindowResources(c.req.query('account'))))
+})
+
+apiV1.get('/followeewindows/:name', async c => {
+  const w = getFolloweeWindowResource(c.req.param('name'))
+  return w ? c.json(w) : c.json({ error: 'not found' }, 404)
 })
 
 // ---------- accounts ----------
@@ -219,6 +288,38 @@ apiV1.get('/logs', async c => {
   return c.json({ apiVersion: 'radar/v1', kind: 'LogTail', dates, date: tail.date, lines: tail.lines })
 })
 
+// ---------- observability ----------
+
+apiV1.post('/rum', async c => {
+  let body: { samples?: { name?: unknown; value?: unknown; at?: unknown; attrs?: unknown }[] } = {}
+  try {
+    body = (await c.req.json()) as typeof body
+  } catch {
+    return c.json({ error: 'invalid JSON body' }, 400)
+  }
+  if (!Array.isArray(body.samples)) return c.json({ error: 'samples required' }, 400)
+  recordRum(
+    body.samples.map(sample => ({
+      name: String(sample.name ?? 'unknown'),
+      value: typeof sample.value === 'number' ? sample.value : Number(sample.value ?? 0),
+      at: typeof sample.at === 'string' ? sample.at : new Date().toISOString(),
+      attrs: sanitizeRumAttrs(sample.attrs),
+    })),
+  )
+  return c.json({ accepted: body.samples.length })
+})
+
+apiV1.get('/observability', c => c.json(observabilitySummary()))
+
+function sanitizeRumAttrs(value: unknown): Record<string, string | number | boolean> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const out: Record<string, string | number | boolean> = {}
+  for (const [key, item] of Object.entries(value)) {
+    if (['string', 'number', 'boolean'].includes(typeof item)) out[key] = item as string | number | boolean
+  }
+  return out
+}
+
 // ---------- media ----------
 
 apiV1.get('/media/:file', async c => {
@@ -276,13 +377,17 @@ apiV1.get('/refreshwindows/:name', c => {
     const encoder = new TextEncoder()
     const stream = new ReadableStream({
       start(controller) {
-        const send = (event: string, data: string) =>
-          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${data}\n\n`))
+        let closed = false
+        const send = (event: string, data: string) => {
+          if (closed) return
+          try { controller.enqueue(encoder.encode(`event: ${event}\ndata: ${data}\n\n`)) } catch { closed = true }
+        }
         const unsub = watchWindow(name, ev => {
           send(ev.type, ev.data)
           if (ev.type === 'done') {
             unsub?.()
-            controller.close()
+            closed = true
+            try { controller.close() } catch {}
           }
         })
         if (!unsub) {

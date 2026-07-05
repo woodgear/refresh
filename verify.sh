@@ -19,6 +19,20 @@ assert_eq() { # expected actual desc
   if [ "$1" = "$2" ]; then ok "$3"; else fail "$3 (expected=$1 actual=$2)"; fi
 }
 
+wait_followee_windows_done() {
+  local names_csv=$1
+  for _ in $(seq 1 80); do
+    local running
+    running=$(curl -s "$BASE/followeewindows" | jq --arg names "$names_csv" '
+      ($names | split(",")) as $names
+      | [.items[] | select(.metadata.name as $n | $names | index($n)) | select(.status.phase == "Running")] | length
+    ')
+    [ "$running" = "0" ] && return 0
+    sleep 0.2
+  done
+  return 1
+}
+
 # ---------- 启动 server ----------
 RADAR_DATA_DIR="$TMPDIR" RADAR_FETCHER=mock RADAR_SCHEDULER=off RADAR_AUTH_PRECHECK=off PORT=$PORT bun server/index.ts >"$TMPDIR/server.log" 2>&1 &
 SERVER_PID=$!
@@ -43,6 +57,14 @@ assert_eq "400"         "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/message
 assert_eq "LogTail"     "$(curl -s "$BASE/logs" | jq -r .kind)" "日志 API 信封"
 LOG_LINES=$(curl -s "$BASE/logs" | jq '.lines | length')
 if [ "$LOG_LINES" -ge 1 ] 2>/dev/null; then ok "日志已落盘 ($LOG_LINES 行)"; else fail "日志为空"; fi
+METRICS=$(curl -s "http://localhost:${PORT}/metrics")
+case "$METRICS" in
+  *refresh_http_request_duration_ms_count*) ok "Prometheus metrics endpoint" ;;
+  *) fail "metrics endpoint 缺少 HTTP 指标" ;;
+esac
+RUM_ACCEPTED=$(curl -s -X POST "$BASE/rum" -d '{"samples":[{"name":"test.metric","value":12.5,"attrs":{"route":"/"}}]}' | jq -r .accepted)
+assert_eq "1" "$RUM_ACCEPTED" "RUM intake 接收样本"
+assert_eq "ObservabilitySummary" "$(curl -s "$BASE/observability" | jq -r .kind)" "observability 摘要 API"
 
 log "== A2(mock): POST refreshwindows → Succeeded，档案落盘 =="
 WIN=$(curl -s -X POST "$BASE/refreshwindows" -d '{"spec":{"source":"zhihu-main-recommend","count":10,"trigger":"manual"}}')
@@ -55,7 +77,9 @@ for i in $(seq 1 30); do
 done
 assert_eq "Succeeded" "$PHASE" "window 走到 Succeeded"
 assert_eq "3" "$(curl -s "$BASE/refreshwindows/$WIN_NAME" | jq -r .status.stats.new)" "stats.new 正确（广告丢弃、聚合卡拆开）"
-if ls "$TMPDIR/windows/$WIN_NAME.json" >/dev/null 2>&1; then ok "档案落盘"; else fail "档案未落盘"; fi
+WIN_ROWS=$(sqlite3 "$TMPDIR/refresh.db" "select count(*) from resources where kind='RefreshWindow' and name='$WIN_NAME';" 2>/dev/null)
+WIN_ITEM_ROWS=$(sqlite3 "$TMPDIR/refresh.db" "select count(*) from resources where kind='RefreshWindowItem' and json_extract(spec,'$.window')='$WIN_NAME';" 2>/dev/null)
+if [ "$WIN_ROWS" = "1" ] && [ "$WIN_ITEM_ROWS" -ge 1 ] 2>/dev/null; then ok "档案落盘到 SQLite ResourceStore"; else fail "SQLite 档案缺失 (window=$WIN_ROWS items=$WIN_ITEM_ROWS)"; fi
 # 同 source 再抓一轮 → 全部 duplicate
 WIN2_NAME=$(curl -s -X POST "$BASE/refreshwindows" -d '{"spec":{"source":"zhihu-main-recommend"}}' | jq -r .metadata.name)
 sleep 1
@@ -108,6 +132,29 @@ assert_eq "0" "$(curl -s "$BASE/messages?authorSelector=category=other" | jq '.i
 curl -s -X PATCH "$BASE/messages/zhihu-8001" -d '{"labels":{"starred":"true"}}' >/dev/null
 assert_eq "true" "$(curl -s "$BASE/messages/zhihu-8001" | jq -r .metadata.labels.starred)" "PATCH message label（overlay）"
 
+log "== Followee: 独立关注列表、分组、备注、导出 =="
+FW=$(curl -s -X POST "$BASE/followeewindows" -d '{"spec":{}}')
+assert_eq "FolloweeWindowList" "$(echo "$FW" | jq -r .kind)" "followeewindows 列表信封"
+assert_eq "3" "$(echo "$FW" | jq '.items | length')" "三平台 followee sync"
+wait_followee_windows_done "$(echo "$FW" | jq -r '[.items[].metadata.name] | join(",")')" || fail "followee windows 未完成"
+assert_eq "6" "$(curl -s "$BASE/followees" | jq '.items | length')" "当前关注人列表"
+assert_eq "Followee" "$(curl -s "$BASE/followees/zhihu-z1" | jq -r .kind)" "单个 Followee GET"
+curl -s -X PATCH "$BASE/followees/zhihu-z1" -d '{"labels":{"group":"ai,infra"},"annotations":{"refresh/note":"重点关注"}}' >/dev/null
+assert_eq "ai,infra" "$(curl -s "$BASE/followees/zhihu-z1" | jq -r .metadata.labels.group)" "PATCH followee group"
+assert_eq "重点关注" "$(curl -s "$BASE/followees/zhihu-z1" | jq -r '.metadata.annotations["refresh/note"]')" "PATCH followee 备注"
+assert_eq "1" "$(curl -s "$BASE/followees?labelSelector=group=ai" | jq '.items | length')" "group selector 多值包含匹配"
+assert_eq "0" "$(curl -s "$BASE/followees?labelSelector=group=missing" | jq '.items | length')" "group selector 不命中"
+EXPORT=$(curl -s "$BASE/followees/export")
+assert_eq "FolloweeExport" "$(echo "$EXPORT" | jq -r .kind)" "followee JSON export 信封"
+assert_eq "6" "$(echo "$EXPORT" | jq -r .count)" "export 只含当前关注"
+assert_eq "重点关注" "$(echo "$EXPORT" | jq -r '.items[] | select(.platformId=="z1") | .note')" "export 展开备注"
+assert_eq "2" "$(echo "$EXPORT" | jq -r '.items[] | select(.platformId=="z1") | .group | length')" "export 展开多 group"
+FW2=$(curl -s -X POST "$BASE/followeewindows" -d '{"spec":{"account":"zhihu-main"}}')
+wait_followee_windows_done "$(echo "$FW2" | jq -r '[.items[].metadata.name] | join(",")')" || fail "followee second window 未完成"
+assert_eq "5" "$(curl -s "$BASE/followees" | jq '.items | length')" "第二次完整同步标记取关后默认隐藏"
+assert_eq "false" "$(curl -s "$BASE/followees?includeNotFollowing=true" | jq -r '.items[] | select(.metadata.name=="zhihu-z2") | .status.following')" "取关状态保留"
+assert_eq "5" "$(curl -s "$BASE/followees/export" | jq -r .count)" "export 排除取关记录"
+
 log "== 已读/未读追踪与排序 =="
 assert_eq "5" "$(curl -s "$BASE/unread-counts" | jq -r .total)" "初始全未读"
 curl -s -X POST "$BASE/messages/mark-read" -d '{"names":["zhihu-8003"]}' >/dev/null
@@ -149,7 +196,8 @@ assert_eq "1200000" "$(curl -s "$BASE/scheduler" | jq -r .spec.intervalMs)" "PAT
 assert_eq "400" "$(curl -s -o /dev/null -w '%{http_code}' -X PATCH "$BASE/scheduler" -d '{"spec":{"intervalMs":1000}}')" "间隔下限校验"
 curl -s -X PATCH "$BASE/scheduler" -d '{"spec":{"enabled":false}}' >/dev/null
 assert_eq "false" "$(curl -s "$BASE/scheduler" | jq -r .spec.enabled)" "PATCH 关闭"
-if [ -f "$TMPDIR/scheduler.json" ]; then ok "开关状态落盘"; else fail "scheduler.json 未落盘"; fi
+SCHED_ROWS=$(sqlite3 "$TMPDIR/refresh.db" "select count(*) from resources where kind='Scheduler' and name='default' and json_extract(spec,'$.enabled')=0;" 2>/dev/null)
+if [ "$SCHED_ROWS" = "1" ]; then ok "scheduler 状态落盘到 SQLite ResourceStore"; else fail "Scheduler resource 未落盘"; fi
 
 log "== A8(半自动): RSS 输出 =="
 RSS_CODE=$(curl -s -o "$TMPDIR/feed.xml" -w '%{http_code}' "http://localhost:${PORT}/rss/zhihu-main-recommend.xml")
@@ -226,6 +274,8 @@ SERVER_PID=$!
 for i in $(seq 1 50); do curl -sf "$BASE/accounts" >/dev/null 2>&1 && break; sleep 0.2; done
 assert_eq "6" "$(curl -s "$BASE/messages" | jq '.items | length')" "重启后 messages 恢复"
 assert_eq "test-cat" "$(curl -s "$BASE/authors/zhihu-mock-author" | jq -r .metadata.labels.category)" "重启后 overlay 保留"
+assert_eq "5" "$(curl -s "$BASE/followees" | jq '.items | length')" "重启后 followees 恢复"
+assert_eq "重点关注" "$(curl -s "$BASE/followees/zhihu-z1" | jq -r '.metadata.annotations["refresh/note"]')" "重启后 followee overlay 保留"
 
 log ""
 log "PASS=$PASS FAIL=$FAIL"

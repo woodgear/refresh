@@ -102,7 +102,7 @@ async function executeWindow(run: RunningWindow, platform: string, count: number
   try {
     await appendWindow(win)
     if (status.phase === 'Succeeded') {
-      const { newCount, dupCount } = ingestWindow(win)
+      const { newCount, dupCount } = await ingestWindow(win)
       // ingestWindow 已写入 stats；同步回运行中资源供 watch/查询
       const indexed = getWindowResource(name)
       if (indexed) {

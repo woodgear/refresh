@@ -4,6 +4,8 @@
 import { getAccount } from './config'
 import { closeTab, ensureBrowser, openSession, sleep } from './cdp'
 import { accountStatus } from './resources'
+import { putStoredResource } from './store'
+import { AccountStatusResource } from './resource-definitions'
 
 export type AuthState = 'ok' | 'logged_out' | 'browser_down' | 'unknown'
 
@@ -16,9 +18,16 @@ export interface AuthResult {
 
 export async function checkAuth(accountName: string, log: (s: string) => void = () => {}): Promise<AuthResult> {
   const account = getAccount(accountName)
-  const finish = (r: Omit<AuthResult, 'lastChecked'>): AuthResult => {
+  const finish = async (r: Omit<AuthResult, 'lastChecked'>): Promise<AuthResult> => {
     const result = { ...r, lastChecked: new Date().toISOString() }
     accountStatus.set(accountName, result as unknown as Record<string, unknown>)
+    await putStoredResource({
+      apiVersion: 'radar/v1',
+      kind: AccountStatusResource.kind,
+      metadata: { name: accountName },
+      spec: {},
+      status: result as unknown as Record<string, unknown>,
+    })
     return result
   }
 

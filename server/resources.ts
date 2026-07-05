@@ -8,12 +8,15 @@ import { rlog } from './logger'
 import {
   applyOverlay,
   listWindowNames,
+  listStoredResources,
+  putStoredResource,
   readOverlay,
   readWindowFile,
   type OverlayKind,
   type Resource,
   type WindowFile,
 } from './store'
+import { AccountStatusResource, AuthorResource, MessageResource } from './resource-definitions'
 
 export interface MessageStatus extends Record<string, unknown> {
   hydrated: boolean
@@ -35,20 +38,22 @@ function mergeDerivedSpec(oldSpec: Record<string, unknown>, newSpec: Record<stri
   if (newSpec.durationSec !== undefined) oldSpec.durationSec = newSpec.durationSec
 }
 
-export function ingestWindow(win: WindowFile): { newCount: number; dupCount: number } {
+export async function ingestWindow(win: WindowFile, opts: { persist?: boolean } = {}): Promise<{ newCount: number; dupCount: number }> {
+  const persist = opts.persist ?? true
   const source = getSource(String((win.spec as Record<string, unknown>).source))
   const windowName = win.metadata.name
   const fetchedAt = win.metadata.creationTimestamp ?? null
   const platform = source?.platform ?? String(windowName.split('-')[0])
   let newCount = 0
   let dupCount = 0
+  const changed = new Map<string, Resource>()
 
   for (const raw of expandRawItems(platform, win.rawItems ?? [])) {
     const normalized = normalizeItem(platform, raw)
     if (!normalized) continue
 
     const { message, author } = normalized
-    const existing = messages.get(message.name)
+      const existing = messages.get(message.name)
     if (existing) {
       dupCount++
       mergeDerivedSpec(existing.spec, message.spec as unknown as Record<string, unknown>)
@@ -63,6 +68,7 @@ export function ingestWindow(win: WindowFile): { newCount: number; dupCount: num
           existing.metadata.annotations!['radar/sources'] = cur.join(',')
         }
       }
+      changed.set(`Message/${existing.metadata.name}`, existing)
     } else {
       newCount++
       // 媒体/头像回填：已本地化的换成 /api/v1/media/<hash>，否则保留外链
@@ -85,9 +91,9 @@ export function ingestWindow(win: WindowFile): { newCount: number; dupCount: num
           return local ? `${pre}${local}${post}` : whole
         })
       }
-      messages.set(message.name, {
+      const resource: Resource<Record<string, unknown>, MessageStatus> = {
         apiVersion: 'radar/v1',
-        kind: 'Message',
+        kind: MessageResource.kind,
         metadata: {
           name: message.name,
           labels: {
@@ -104,7 +110,9 @@ export function ingestWindow(win: WindowFile): { newCount: number; dupCount: num
         },
         spec: message.spec as unknown as Record<string, unknown>,
         status: { hydrated: message.spec.content != null },
-      })
+      }
+      messages.set(message.name, resource)
+      changed.set(`Message/${resource.metadata.name}`, resource)
     }
 
     if (author) {
@@ -114,21 +122,29 @@ export function ingestWindow(win: WindowFile): { newCount: number; dupCount: num
         existingAuthor.status.lastSeenAt = fetchedAt
         // 快照字段允许跟进最新（作者改名/换头像）
         Object.assign(existingAuthor.spec, stripUndefined(author.spec))
+        changed.set(`Author/${existingAuthor.metadata.name}`, existingAuthor)
       } else {
         const spec = stripUndefined(author.spec)
         if (spec.avatar) spec.avatar = localMediaUrl(spec.avatar) ?? spec.avatar
-        authors.set(author.name, {
+        const resource: Resource<Record<string, unknown>, AuthorStatus> = {
           apiVersion: 'radar/v1',
-          kind: 'Author',
+          kind: AuthorResource.kind,
           metadata: { name: author.name, labels: { platform }, annotations: {} },
           spec,
           status: { messageCount: 1, lastSeenAt: fetchedAt },
-        })
+        }
+        authors.set(author.name, resource)
+        changed.set(`Author/${resource.metadata.name}`, resource)
       }
     }
   }
 
   registerWindowResource(win, { newCount, dupCount })
+  if (persist) {
+    const windowResource = windows.get(win.metadata.name)
+    if (windowResource) changed.set(`RefreshWindow/${windowResource.metadata.name}`, windowResource)
+    for (const resource of changed.values()) await putStoredResource(resource)
+  }
   return { newCount, dupCount }
 }
 
@@ -146,12 +162,18 @@ export async function buildIndex(): Promise<void> {
   messages.clear()
   authors.clear()
   windows.clear()
-  for (const name of await listWindowNames()) {
+  accountStatus.clear()
+  const names = await listWindowNames()
+  const persistProjections = names.length > 0 && (await listStoredResources(MessageResource)).length === 0
+  for (const name of names) {
     try {
-      ingestWindow(await readWindowFile(name))
+      await ingestWindow(await readWindowFile(name), { persist: persistProjections })
     } catch (err) {
       rlog('index', `skip corrupt window ${name}: ${err instanceof Error ? err.message : err}`)
     }
+  }
+  for (const resource of await listStoredResources(AccountStatusResource)) {
+    accountStatus.set(resource.metadata.name, resource.status as Record<string, unknown>)
   }
   rlog('index', `built: ${messages.size} messages, ${authors.size} authors, ${windows.size} windows`)
 }

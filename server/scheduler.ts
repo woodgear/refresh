@@ -1,15 +1,14 @@
 // 低频调度 controller（docs/design.md §8）：每轮对每个账号先 checkAuth，
 // ok 的账号按源串行创建 scheduled RefreshWindow；logged_out 的跳过不空转。
-// 开关/间隔是运行时可改的单例资源（GET/PATCH /api/v1/scheduler），落盘 data/scheduler.json；
+// 开关/间隔是运行时可改的单例资源（GET/PATCH /api/v1/scheduler），落盘 SQLite ResourceStore；
 // 环境变量只作为无配置文件时的初始默认（RADAR_SCHEDULER=off、RADAR_SCHEDULE_INTERVAL_MS）。
 
-import { readFile, writeFile, rename } from 'fs/promises'
-import { join } from 'path'
 import { ACCOUNTS, SOURCES } from './config'
 import { checkAuth } from './auth'
 import { createRefreshWindow, getRunningWindow } from './refresh'
 import { sleep } from './cdp'
-import { DATA_DIR, ensureDirs, type Resource } from './store'
+import { ensureDirs, type Resource, readSchedulerSpecFromStore, writeSchedulerSpecToStore } from './store'
+import { SchedulerResource } from './resource-definitions'
 import { rlog } from './logger'
 
 interface SchedulerSpec {
@@ -17,7 +16,6 @@ interface SchedulerSpec {
   intervalMs: number
 }
 
-const SPEC_PATH = () => join(DATA_DIR, 'scheduler.json')
 const MIN_INTERVAL_MS = 60_000
 
 let spec: SchedulerSpec = { enabled: true, intervalMs: 30 * 60 * 1000 }
@@ -36,14 +34,14 @@ function envDefaults(): SchedulerSpec {
 }
 
 export async function initScheduler(): Promise<void> {
-  try {
-    const saved = JSON.parse(await readFile(SPEC_PATH(), 'utf-8')) as Partial<SchedulerSpec>
+  const saved = await readSchedulerSpecFromStore()
+  if (saved) {
     const def = envDefaults()
     spec = {
       enabled: typeof saved.enabled === 'boolean' ? saved.enabled : def.enabled,
       intervalMs: typeof saved.intervalMs === 'number' && saved.intervalMs >= MIN_INTERVAL_MS ? saved.intervalMs : def.intervalMs,
     }
-  } catch {
+  } else {
     spec = envDefaults()
   }
   apply(true)
@@ -73,7 +71,7 @@ function apply(bootstrap = false): void {
 export function schedulerResource(): Resource {
   return {
     apiVersion: 'radar/v1',
-    kind: 'Scheduler',
+    kind: SchedulerResource.kind,
     metadata: { name: 'default' },
     spec: { ...spec },
     status: { running: roundInProgress, lastRoundAt, nextRoundAt: spec.enabled ? nextRoundAt : null },
@@ -87,9 +85,7 @@ export async function patchScheduler(patch: { enabled?: unknown; intervalMs?: un
     spec.intervalMs = Math.floor(patch.intervalMs)
   }
   await ensureDirs()
-  const tmp = `${SPEC_PATH()}.tmp-${process.pid}`
-  await writeFile(tmp, JSON.stringify(spec, null, 2), 'utf-8')
-  await rename(tmp, SPEC_PATH())
+  await writeSchedulerSpecToStore({ ...spec })
   apply()
   rlog('scheduler', `patched: enabled=${spec.enabled} intervalMs=${spec.intervalMs}`)
   return schedulerResource()
