@@ -1,0 +1,21 @@
+[Unit]
+Description=Refresh server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/cong/sm/project/refresh
+Environment=HOME=/home/cong
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+Environment=DISPLAY=:0
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=PORT=13002
+Environment=RADAR_BASE_URL=https://refresh-k2.woodgear.me
+ExecStartPre=/usr/bin/bash -lc 'if [ -f /home/cong/.env/.all.env ]; then source /home/cong/.env/.all.env; fi; exec /usr/bin/bun run build'
+ExecStart=/usr/bin/bash -lc 'if [ -f /home/cong/.env/.all.env ]; then source /home/cong/.env/.all.env; fi; export HOME=/home/cong XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus DISPLAY=:0 WAYLAND_DISPLAY=wayland-0 PORT=13002 RADAR_BASE_URL=https://refresh-k2.woodgear.me; exec /usr/bin/bun server/index.ts'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

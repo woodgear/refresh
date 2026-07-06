@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import { extname, join, normalize } from 'node:path'
 import { apiV1 } from './api'
 import { rssApp } from './rss'
 import { ensureDirs } from './store'
@@ -9,6 +10,33 @@ import { buildFolloweeIndex } from './followees'
 import { initScheduler } from './scheduler'
 import { rlog } from './logger'
 import { metricsText, recordHttp } from './observability'
+
+const webDistDir = join(import.meta.dir, '..', 'dist')
+const staticContentTypes = new Map([
+  ['.html', 'text/html; charset=utf-8'],
+  ['.js', 'text/javascript; charset=utf-8'],
+  ['.css', 'text/css; charset=utf-8'],
+  ['.json', 'application/json; charset=utf-8'],
+  ['.svg', 'image/svg+xml'],
+  ['.png', 'image/png'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+  ['.webp', 'image/webp'],
+  ['.ico', 'image/x-icon'],
+  ['.txt', 'text/plain; charset=utf-8'],
+])
+
+async function staticFileResponse(pathname: string): Promise<Response | undefined> {
+  const decodedPath = decodeURIComponent(pathname)
+  const normalizedPath = normalize(decodedPath).replace(/^(\.\.(\/|\\|$))+/, '')
+  const relativePath = normalizedPath === '/' ? 'index.html' : normalizedPath.replace(/^\/+/, '')
+  const filePath = join(webDistDir, relativePath)
+  const file = Bun.file(filePath)
+  if (!(await file.exists())) return undefined
+
+  const contentType = staticContentTypes.get(extname(filePath))
+  return new Response(file, contentType ? { headers: { 'Content-Type': contentType } } : undefined)
+}
 
 const app = new Hono()
 app.use('*', cors())
@@ -29,6 +57,13 @@ await buildIndex()
 await buildFolloweeIndex()
 app.route('/api/v1', apiV1)
 app.route('/rss', rssApp)
+app.get('*', async c => {
+  const staticResponse = await staticFileResponse(c.req.path)
+  if (staticResponse) return staticResponse
+
+  const index = Bun.file(join(webDistDir, 'index.html'))
+  return new Response(index, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+})
 
 await initScheduler()
 
