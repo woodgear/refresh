@@ -14,6 +14,8 @@ export const CDP_HOST = '127.0.0.1'
 export const CDP_PORT = parseInt(process.env.RADAR_CDP_PORT ?? '19223', 10)
 const PROFILE_DIR = process.env.RADAR_PROFILE_DIR ?? join(__dirname, '..', 'profiles', 'main')
 const HTTP_BASE = `http://${CDP_HOST}:${CDP_PORT}`
+const PROBE_URL = 'data:text/html,<title>refresh-cdp-probe</title><body>ok</body>'
+let launchedBrowserPid: number | null = null
 
 // ---------- 健康检查与自愈 ----------
 
@@ -24,6 +26,51 @@ export async function cdpAlive(): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+async function cdpUsable(): Promise<boolean> {
+  if (!(await cdpAlive())) return false
+  let tab: TabInfo | null = null
+  let session: CdpSession | null = null
+  try {
+    tab = await newTab('about:blank')
+    session = await CdpSession.connect(tab.webSocketDebuggerUrl)
+    await navigate(session, PROBE_URL)
+    for (let i = 0; i < 10; i++) {
+      const href = await session.evaluate<string>('location.href', 1000)
+      if (href.startsWith('data:text/html')) return true
+      await sleep(100)
+    }
+    return false
+  } catch {
+    return false
+  } finally {
+    session?.close()
+    if (tab) await closeTab(tab.id)
+  }
+}
+
+async function closeBrowser(log: (s: string) => void): Promise<void> {
+  try {
+    const res = await fetch(`${HTTP_BASE}/json/version`, { signal: AbortSignal.timeout(2000) })
+    if (!res.ok) return
+    const version = (await res.json()) as { webSocketDebuggerUrl?: string }
+    if (!version.webSocketDebuggerUrl) return
+    const session = await CdpSession.connect(version.webSocketDebuggerUrl)
+    try {
+      await session.send('Browser.close', {}, 3000)
+    } finally {
+      session.close()
+    }
+  } catch (err) {
+    log(`Chrome close failed: ${err instanceof Error ? err.message : err}`)
+  }
+
+  for (let i = 0; i < 20; i++) {
+    if (!(await cdpAlive())) return
+    await sleep(250)
+  }
+  await terminateLaunchedBrowser(log, 'Chrome did not exit after Browser.close')
 }
 
 function findChromeExecutable(): string | null {
@@ -47,11 +94,73 @@ function chromeOzonePlatform(): string {
   return ''
 }
 
+function chromeEnv(ozonePlatform: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    HOME: process.env.HOME ?? '/home/cong',
+    PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin',
+    LANG: process.env.LANG ?? 'en_US.UTF-8',
+  }
+  for (const key of ['XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'DISPLAY']) {
+    if (process.env[key]) env[key] = process.env[key]
+  }
+  if (ozonePlatform === 'wayland' && process.env.WAYLAND_DISPLAY) env.WAYLAND_DISPLAY = process.env.WAYLAND_DISPLAY
+  return env
+}
+
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function terminateLaunchedBrowser(log: (s: string) => void, reason: string): Promise<void> {
+  const pid = launchedBrowserPid
+  if (!pid) {
+    log(reason)
+    return
+  }
+  log(`${reason}; terminating Chrome pid ${pid}`)
+  try {
+    process.kill(-pid, 'SIGTERM')
+  } catch {
+    try {
+      process.kill(pid, 'SIGTERM')
+    } catch {
+      launchedBrowserPid = null
+      return
+    }
+  }
+  for (let i = 0; i < 20; i++) {
+    if (!processAlive(pid)) {
+      launchedBrowserPid = null
+      return
+    }
+    await sleep(250)
+  }
+  try {
+    process.kill(-pid, 'SIGKILL')
+  } catch {
+    try {
+      process.kill(pid, 'SIGKILL')
+    } catch {
+      // Process already exited.
+    }
+  }
+  launchedBrowserPid = null
+}
+
 /** Chrome 不可用时自拉起（有头窗口，扫码登录要用）。返回是否可用。 */
 export async function ensureBrowser(log: (s: string) => void = () => {}): Promise<boolean> {
-  if (await cdpAlive()) {
+  if (await cdpUsable()) {
     await ensurePageTarget()
     return true
+  }
+  if (await cdpAlive()) {
+    log('Chrome CDP is reachable but page navigation is stuck; restarting Chrome')
+    await closeBrowser(log)
   }
   const executable = process.env.RADAR_CHROME_BIN ?? findChromeExecutable()
   if (!executable) {
@@ -62,8 +171,10 @@ export async function ensureBrowser(log: (s: string) => void = () => {}): Promis
   const ozonePlatform = chromeOzonePlatform()
   log(`launching Chrome (profile=${PROFILE_DIR}, cdp=${CDP_PORT}, ozone=${ozonePlatform || 'default'})`)
   const chromeArgs = [
+    `--remote-debugging-address=${CDP_HOST}`,
     `--remote-debugging-port=${CDP_PORT}`,
     `--user-data-dir=${PROFILE_DIR}`,
+    '--password-store=basic',
     '--no-first-run',
     '--no-default-browser-check',
     '--disable-sync',
@@ -74,21 +185,25 @@ export async function ensureBrowser(log: (s: string) => void = () => {}): Promis
     'about:blank',
   ]
   try {
-    const child = spawn(executable, chromeArgs, { detached: true, stdio: 'ignore' })
+    const child = spawn(executable, chromeArgs, { detached: true, stdio: 'ignore', env: chromeEnv(ozonePlatform) })
+    launchedBrowserPid = child.pid ?? null
+    child.on('exit', () => {
+      if (launchedBrowserPid === child.pid) launchedBrowserPid = null
+    })
     child.unref()
   } catch (err) {
     log(`Chrome launch failed: ${err instanceof Error ? err.message : err}`)
     return false
   }
   for (let i = 0; i < 40; i++) {
-    if (await cdpAlive()) {
+    if (await cdpUsable()) {
       await ensurePageTarget()
       log('Chrome up')
       return true
     }
     await sleep(500)
   }
-  log('Chrome did not come up within 20s')
+  await terminateLaunchedBrowser(log, 'Chrome did not come up within 20s')
   return false
 }
 
@@ -110,19 +225,24 @@ export interface TabInfo {
 }
 
 export async function listTabs(): Promise<TabInfo[]> {
-  const res = await fetch(`${HTTP_BASE}/json`)
+  const res = await fetch(`${HTTP_BASE}/json`, { signal: AbortSignal.timeout(3000) })
   const all = (await res.json()) as (TabInfo & { type: string })[]
   return all.filter(t => t.type === 'page')
 }
 
 export async function newTab(url = 'about:blank'): Promise<TabInfo> {
-  const res = await fetch(`${HTTP_BASE}/json/new?${encodeURIComponent(url)}`, { method: 'PUT' })
+  const res = await fetch(`${HTTP_BASE}/json/new?${encodeURIComponent(url)}`, { method: 'PUT', signal: AbortSignal.timeout(3000) })
   if (!res.ok) throw new Error(`CDP /json/new failed: ${res.status}`)
   return (await res.json()) as TabInfo
 }
 
+async function navigate(session: CdpSession, url: string): Promise<void> {
+  await session.send('Page.enable', {}, 3000)
+  await session.send('Page.navigate', { url }, 20_000)
+}
+
 export async function closeTab(id: string): Promise<void> {
-  await fetch(`${HTTP_BASE}/json/close/${id}`).catch(() => {})
+  await fetch(`${HTTP_BASE}/json/close/${id}`, { signal: AbortSignal.timeout(2000) }).catch(() => {})
 }
 
 // ---------- WebSocket 会话 ----------
@@ -217,9 +337,16 @@ export class CdpSession {
 
 /** 开新 tab 并建立会话；用完记得 session.close() + closeTab(tab.id) */
 export async function openSession(url: string): Promise<{ tab: TabInfo; session: CdpSession }> {
-  const tab = await newTab(url)
+  const tab = await newTab('about:blank')
   const session = await CdpSession.connect(tab.webSocketDebuggerUrl)
-  return { tab, session }
+  try {
+    await navigate(session, url)
+    return { tab, session }
+  } catch (err) {
+    session.close()
+    await closeTab(tab.id)
+    throw err
+  }
 }
 
 export const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))

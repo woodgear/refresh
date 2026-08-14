@@ -7,7 +7,7 @@
 
 import { randomUUID } from 'crypto'
 import { getAccount, SOURCES } from './config'
-import { closeTab, ensureBrowser, newTab, CdpSession } from './cdp'
+import { closeTab, ensureBrowser, openSession, CdpSession } from './cdp'
 import { checkAuth } from './auth'
 import { createRefreshWindow } from './refresh'
 import { accountStatus } from './resources'
@@ -99,9 +99,15 @@ export async function createLoginSession(accountName: string): Promise<Resource>
     return toResource(state)
   }
 
-  const tab = await newTab(conf.url)
-  state.tabId = tab.id
-  state.session = await CdpSession.connect(tab.webSocketDebuggerUrl)
+  try {
+    const { tab, session } = await openSession(conf.url)
+    state.tabId = tab.id
+    state.session = session
+  } catch (err) {
+    state.phase = 'Failed'
+    state.error = `login page navigation failed: ${err instanceof Error ? err.message : err}`
+    return toResource(state)
+  }
 
   if (conf.mode === 'qr') {
     state.phase = 'WaitingScan'
