@@ -12,6 +12,72 @@ export interface Fetcher {
   fetch(source: SourceConfig, count: number, log: (line: string) => void): Promise<FetchResult>
 }
 
+export interface FetchPageResult {
+  rawItems: unknown[]
+  nextCursor: string | null
+  hasMore: boolean
+  fetchedAt: number
+}
+
+export interface ContinuationFetcher {
+  fetchHead(source: SourceConfig, count: number, log: (line: string) => void): Promise<FetchPageResult>
+  fetchNext(source: SourceConfig, cursor: string, count: number, log: (line: string) => void): Promise<FetchPageResult>
+}
+
+export interface MockPage {
+  inputCursor: string | null
+  rawItems: unknown[]
+  nextCursor: string | null
+  fetchedAt: number
+}
+
+/** 分页契约的确定性测试源；不参与真实 RefreshWindow 抓取。 */
+export class MockContinuationFetcher implements ContinuationFetcher {
+  readonly calls: Array<{ source: string; cursor: string | null; count: number }> = []
+  private readonly pages: ReadonlyMap<string, readonly MockPage[]>
+  private readonly failures = new Map<string, { remaining: number; error: Error }>()
+
+  constructor(pages: Record<string, readonly MockPage[]>) {
+    this.pages = new Map(Object.entries(pages))
+  }
+
+  failNext(source: string, cursor: string, error = new Error(`mock page failed: ${source} cursor=${cursor}`)): void {
+    this.failures.set(this.key(source, cursor), { remaining: 1, error })
+  }
+
+  async fetchHead(source: SourceConfig, count: number, log: (line: string) => void): Promise<FetchPageResult> {
+    return this.read(source, null, count, log)
+  }
+
+  async fetchNext(source: SourceConfig, cursor: string, count: number, log: (line: string) => void): Promise<FetchPageResult> {
+    return this.read(source, cursor, count, log)
+  }
+
+  private async read(source: SourceConfig, cursor: string | null, count: number, log: (line: string) => void): Promise<FetchPageResult> {
+    this.calls.push({ source: source.name, cursor, count })
+    const page = this.pages.get(source.name)?.find(candidate => candidate.inputCursor === cursor)
+    if (!page) throw new Error(`mock continuation page not found: ${source.name} cursor=${cursor ?? 'head'}`)
+    if (cursor !== null) {
+      const failure = this.failures.get(this.key(source.name, cursor))
+      if (failure?.remaining) {
+        failure.remaining--
+        throw failure.error
+      }
+    }
+    log(`mock page source=${source.name} cursor=${cursor ?? 'head'} count=${count}`)
+    return {
+      rawItems: page.rawItems.slice(0, count),
+      nextCursor: page.nextCursor,
+      hasMore: page.nextCursor !== null,
+      fetchedAt: page.fetchedAt,
+    }
+  }
+
+  private key(source: string, cursor: string): string {
+    return `${source}\u0000${cursor}`
+  }
+}
+
 /** 直连 CDP，按平台路由到对应采集器 */
 export class CdpFetcher implements Fetcher {
   async fetch(source: SourceConfig, count: number, log: (line: string) => void): Promise<FetchResult> {
