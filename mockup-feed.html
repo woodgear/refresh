@@ -1,0 +1,1021 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Refresh Feed Mockup</title>
+  <script src="https://unpkg.com/lucide@0.454.0/dist/umd/lucide.js"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #171717;
+      --ink-soft: #55514c;
+      --paper: #ffffff;
+      --canvas: #f5f4f1;
+      --line: #dedbd6;
+      --line-strong: #c8c4bd;
+      --sidebar: #20211f;
+      --sidebar-soft: #a8aaa3;
+      --cyan: #1f8ea7;
+      --cyan-soft: #e2f2f5;
+      --coral: #d9574f;
+      --coral-soft: #fbe9e6;
+      --yellow: #e1aa35;
+      --success: #358158;
+      --radius: 6px;
+      --sidebar-width: 238px;
+      font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-synthesis: none;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--canvas); color: var(--ink); }
+    button, input { font: inherit; }
+    button { letter-spacing: 0; }
+    button:focus-visible, input:focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 2px;
+    }
+
+    .app {
+      min-height: 100dvh;
+      display: grid;
+      grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      background: var(--sidebar);
+      color: #f8f7f3;
+      border-right: 1px solid #111210;
+    }
+
+    .brand {
+      height: 64px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 18px;
+      border-bottom: 1px solid #363733;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .brand-mark {
+      width: 24px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      border-radius: 5px;
+      background: var(--coral);
+      color: white;
+    }
+
+    .nav-section { padding: 14px 10px 4px; }
+    .nav-label {
+      margin: 0 8px 7px;
+      color: #777a72;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .nav-button, .source-button {
+      width: 100%;
+      min-height: 36px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      border: 0;
+      border-radius: 5px;
+      padding: 7px 9px;
+      background: transparent;
+      color: var(--sidebar-soft);
+      cursor: pointer;
+      text-align: left;
+      transition: background 140ms ease, color 140ms ease;
+    }
+
+    .nav-button:hover, .source-button:hover { background: #2c2e2a; color: #fff; }
+    .nav-button.active { background: #f5f4f1; color: var(--ink); }
+    .nav-button svg, .source-button svg { width: 16px; height: 16px; flex: none; }
+    .nav-button .count, .source-button .count {
+      margin-left: auto;
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .platform {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin: 13px 9px 4px;
+      color: #858880;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
+    .source-button { min-height: 31px; padding-left: 25px; font-size: 13px; }
+    .source-button.active { background: #31332f; color: #fff; }
+    .source-button.active::before {
+      content: "";
+      width: 2px;
+      height: 16px;
+      margin-left: -16px;
+      margin-right: 5px;
+      border-radius: 1px;
+      background: var(--cyan);
+    }
+
+    .sidebar-footer {
+      margin-top: auto;
+      padding: 12px 14px;
+      border-top: 1px solid #363733;
+      color: #868980;
+      font-size: 11px;
+      line-height: 1.6;
+    }
+
+    .main { min-width: 0; }
+    .mobile-bar { display: none; }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      min-height: 64px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 9px 22px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255,255,255,.96);
+      backdrop-filter: blur(10px);
+    }
+
+    .heading { min-width: 0; }
+    .heading h1 { margin: 0; font-size: 17px; line-height: 1.3; }
+    .heading p { margin: 3px 0 0; color: var(--ink-soft); font-size: 11px; }
+    .prototype-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      min-height: 24px;
+      padding: 3px 7px;
+      border: 1px solid #eccb7d;
+      border-radius: 4px;
+      background: #fff7df;
+      color: #795b19;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .top-actions { margin-left: auto; display: flex; align-items: center; gap: 7px; }
+    .icon-button, .action-button {
+      min-height: 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      border: 1px solid var(--line-strong);
+      border-radius: 5px;
+      background: var(--paper);
+      color: var(--ink);
+      cursor: pointer;
+      transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+    }
+    .icon-button { width: 34px; padding: 0; }
+    .action-button { padding: 0 10px; font-size: 12px; font-weight: 600; }
+    .icon-button:hover, .action-button:hover { border-color: #9d9890; background: #faf9f6; }
+    .icon-button:active, .action-button:active { transform: translateY(1px); }
+    .icon-button svg, .action-button svg { width: 15px; height: 15px; }
+
+    .content { width: min(1420px, 100%); margin: 0 auto; padding: 18px 22px 56px; }
+    .feed-meta {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-bottom: 15px;
+      color: var(--ink-soft);
+      font-size: 12px;
+    }
+    .feed-meta strong { color: var(--ink); font-weight: 650; }
+    .divider { width: 1px; height: 12px; background: var(--line); }
+    .live-status { display: inline-flex; align-items: center; gap: 6px; }
+    .live-status .status-dot { width: 6px; height: 6px; }
+
+    .new-content-wrap {
+      position: sticky;
+      top: 75px;
+      z-index: 15;
+      height: 0;
+      display: flex;
+      justify-content: center;
+      pointer-events: none;
+    }
+    .new-content {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 34px;
+      padding: 0 12px;
+      border: 1px solid #146d80;
+      border-radius: 17px;
+      background: var(--cyan);
+      color: white;
+      box-shadow: 0 8px 22px rgba(21, 74, 87, .22);
+      font-size: 12px;
+      font-weight: 650;
+      cursor: pointer;
+      pointer-events: auto;
+      transform: translateY(-56px);
+      opacity: 0;
+      transition: transform 220ms ease, opacity 220ms ease;
+    }
+    .new-content.visible { transform: translateY(0); opacity: 1; }
+    .new-content svg { width: 15px; height: 15px; }
+
+    .feed-shell {
+      display: grid;
+      grid-template-columns: minmax(0, 760px) 238px;
+      justify-content: center;
+      align-items: start;
+      gap: 28px;
+    }
+
+    .feed-grid { display: grid; gap: 12px; min-width: 0; }
+
+    .recommendation-rail {
+      position: sticky;
+      top: 92px;
+      padding-left: 18px;
+      border-left: 1px solid var(--line);
+      color: var(--ink-soft);
+      font-size: 11px;
+    }
+    .rail-section { padding: 3px 0 18px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+    .rail-title { margin: 0 0 10px; color: var(--ink); font-size: 12px; font-weight: 700; }
+    .mix-row { display: grid; grid-template-columns: 42px 1fr 24px; align-items: center; gap: 7px; margin: 8px 0; }
+    .mix-bar { height: 4px; overflow: hidden; border-radius: 2px; background: #dedbd5; }
+    .mix-fill { height: 100%; border-radius: inherit; }
+    .topic-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .topic {
+      min-height: 24px;
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 7px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: #faf9f6;
+      color: var(--ink-soft);
+    }
+
+    .stream-card {
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--paper);
+      transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+    }
+    .stream-card:hover {
+      transform: translateY(-1px);
+      border-color: #b7b2aa;
+      box-shadow: 0 8px 22px rgba(42, 39, 34, .07);
+    }
+    .stream-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 38px;
+      padding: 8px 13px;
+      border-bottom: 1px solid #ece9e4;
+      color: var(--ink-soft);
+      font-size: 11px;
+    }
+    .platform-chip {
+      min-height: 20px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-weight: 700;
+    }
+    .platform-chip svg { width: 12px; height: 12px; }
+    .platform-chip.bilibili { background: #edf7f9; color: #187187; }
+    .platform-chip.zhihu { background: #eef3fb; color: #315f9e; }
+    .platform-chip.twitter { background: #f0f0ef; color: #242522; }
+    .reason { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .card-menu { margin-left: auto; width: 28px; height: 26px; border: 0; border-radius: 4px; background: transparent; color: var(--ink-soft); cursor: pointer; }
+    .card-menu:hover { background: #efede9; color: var(--ink); }
+    .card-menu svg { width: 15px; height: 15px; }
+
+    .text-card-body { padding: 15px 16px 13px; }
+    .post-author { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .avatar {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      flex: none;
+      border-radius: 5px;
+      background: #e7e4df;
+      color: #55514b;
+      font-size: 12px;
+      font-weight: 750;
+    }
+    .author-copy { min-width: 0; }
+    .author-name { overflow: hidden; font-size: 12px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+    .author-meta { margin-top: 2px; color: var(--ink-soft); font-size: 10px; }
+    .tweet-text, .answer-excerpt {
+      margin: 0;
+      display: -webkit-box;
+      overflow: hidden;
+      color: #292825;
+      font-size: 14px;
+      line-height: 1.75;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 5;
+    }
+    .answer-title { margin: 0 0 8px; font-size: 17px; line-height: 1.55; }
+    .answer-excerpt { color: #4e4b46; -webkit-line-clamp: 4; }
+    .text-media { width: 100%; max-height: 360px; display: block; margin-top: 12px; border-radius: 4px; object-fit: cover; }
+    .text-stats {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid #ece9e4;
+      color: var(--ink-soft);
+      font-size: 11px;
+    }
+    .text-stats span { display: inline-flex; align-items: center; gap: 5px; }
+    .text-stats svg { width: 13px; height: 13px; }
+
+    .video-card {
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--paper);
+      transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+    }
+    .video-card:hover {
+      transform: translateY(-2px);
+      border-color: #b7b2aa;
+      box-shadow: 0 8px 22px rgba(42, 39, 34, .08);
+    }
+    .cover-button {
+      position: relative;
+      display: block;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      border: 0;
+      padding: 0;
+      background: #dedbd4;
+      cursor: pointer;
+    }
+    .cover-button img { width: 100%; height: 100%; display: block; object-fit: cover; transition: transform 260ms ease; }
+    .video-card:hover img { transform: scale(1.025); }
+    .duration {
+      position: absolute;
+      right: 7px;
+      bottom: 7px;
+      padding: 2px 5px;
+      border-radius: 3px;
+      background: rgba(15, 15, 14, .82);
+      color: white;
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+    }
+    .video-body { padding: 11px 12px 10px; }
+    .video-title {
+      min-height: 42px;
+      margin: 0;
+      display: -webkit-box;
+      overflow: hidden;
+      color: var(--ink);
+      font-size: 14px;
+      font-weight: 650;
+      line-height: 1.5;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+    .author-row, .stats-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+      color: var(--ink-soft);
+      font-size: 11px;
+    }
+    .author-row { margin-top: 8px; }
+    .author-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .stats-row { margin-top: 7px; padding-top: 8px; border-top: 1px solid #ece9e4; gap: 13px; }
+    .stat { display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
+    .author-row svg, .stats-row svg { width: 13px; height: 13px; }
+    .unread-mark { margin-left: auto; width: 7px; height: 7px; border-radius: 50%; background: var(--coral); }
+
+    .feed-footer {
+      min-height: 90px;
+      display: grid;
+      place-items: center;
+      color: var(--ink-soft);
+      font-size: 12px;
+    }
+    .loading-more { display: inline-flex; align-items: center; gap: 8px; }
+    .spinner { width: 16px; height: 16px; border: 2px solid #d8d4cd; border-top-color: var(--cyan); border-radius: 50%; animation: spin .75s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .inbox-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    .segmented {
+      display: inline-flex;
+      padding: 2px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: #eceae6;
+    }
+    .segment {
+      min-height: 28px;
+      border: 0;
+      border-radius: 3px;
+      padding: 0 9px;
+      background: transparent;
+      color: var(--ink-soft);
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .segment.active { background: white; color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+    .check-control { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-soft); font-size: 11px; }
+    .check-control input { accent-color: var(--cyan); }
+    .inbox-list { border-top: 1px solid var(--line); background: var(--paper); }
+    .inbox-item {
+      display: grid;
+      grid-template-columns: 112px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 14px;
+      min-height: 88px;
+      padding: 11px 13px;
+      border: 1px solid var(--line);
+      border-top: 0;
+      background: white;
+    }
+    .inbox-thumb { width: 112px; aspect-ratio: 16/9; object-fit: cover; border-radius: 4px; background: #ddd; }
+    .inbox-copy { min-width: 0; }
+    .source-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 20px;
+      padding: 1px 6px;
+      border: 1px solid #b9dce4;
+      border-radius: 3px;
+      background: var(--cyan-soft);
+      color: #176476;
+      font-size: 10px;
+    }
+    .inbox-title { margin: 5px 0 3px; overflow: hidden; font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+    .inbox-subtitle { color: var(--ink-soft); font-size: 11px; }
+    .read-button { width: 32px; height: 32px; border: 1px solid var(--line); border-radius: 5px; background: white; cursor: pointer; }
+    .read-button svg { width: 15px; height: 15px; }
+
+    .toast {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      z-index: 40;
+      min-width: 220px;
+      padding: 10px 12px;
+      border: 1px solid #2b2c29;
+      border-radius: 5px;
+      background: #242522;
+      color: white;
+      font-size: 12px;
+      box-shadow: 0 12px 30px rgba(0,0,0,.18);
+      opacity: 0;
+      transform: translateY(8px);
+      pointer-events: none;
+      transition: opacity 160ms ease, transform 160ms ease;
+    }
+    .toast.visible { opacity: 1; transform: translateY(0); }
+    .error-panel { padding: 30px; border: 1px solid #e8b4ae; border-radius: 6px; background: var(--coral-soft); color: #8e332e; }
+    .hidden { display: none !important; }
+
+    @media (max-width: 1100px) {
+      .feed-shell { grid-template-columns: minmax(0, 760px); }
+      .recommendation-rail { display: none; }
+      .prototype-tag { display: none; }
+    }
+
+    @media (max-width: 760px) {
+      .app { display: block; }
+      .sidebar { display: none; }
+      .mobile-bar {
+        position: sticky;
+        top: 0;
+        z-index: 30;
+        height: 52px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 12px;
+        border-bottom: 1px solid var(--line);
+        background: white;
+      }
+      .mobile-bar strong { font-size: 15px; }
+      .mobile-bar .icon-button:last-child { margin-left: auto; }
+      .topbar { top: 52px; min-height: 56px; padding: 7px 12px; }
+      .topbar .action-button span { display: none; }
+      .topbar .action-button { width: 34px; padding: 0; }
+      .heading h1 { font-size: 15px; }
+      .heading p { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .content { padding: 13px 11px 42px; }
+      .feed-meta { overflow-x: auto; white-space: nowrap; }
+      .feed-grid { gap: 10px; }
+      .text-card-body { padding: 13px; }
+      .answer-title { font-size: 15px; }
+      .video-title { min-height: auto; }
+      .new-content-wrap { top: 117px; }
+      .inbox-toolbar { align-items: flex-start; flex-wrap: wrap; }
+      .inbox-item { grid-template-columns: 88px minmax(0, 1fr) auto; gap: 10px; padding: 9px; }
+      .inbox-thumb { width: 88px; }
+      .toast { right: 12px; bottom: 12px; left: 12px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" aria-label="主导航">
+      <div class="brand"><span class="brand-mark"><i data-lucide="refresh-cw"></i></span>Refresh</div>
+      <div class="nav-section">
+        <p class="nav-label">Workspace</p>
+        <button class="nav-button active" data-view="feed"><i data-lucide="sparkles"></i>为你推荐<span class="count">LIVE</span></button>
+        <button class="nav-button" data-view="inbox"><i data-lucide="inbox"></i>收件箱<span class="count">210</span></button>
+        <button class="nav-button"><i data-lucide="archive"></i>采集记录</button>
+      </div>
+      <div class="nav-section source-nav">
+        <p class="nav-label">Sources</p>
+        <div class="platform"><span class="status-dot"></span>B站</div>
+        <button class="source-button" data-source="bilibili-main-recommend">推荐</button>
+        <button class="source-button" data-source="bilibili-main-follow">关注<span class="count">81</span></button>
+        <div class="platform"><span class="status-dot"></span>知乎</div>
+        <button class="source-button" data-source="zhihu-main-recommend">推荐<span class="count">41</span></button>
+        <button class="source-button" data-source="zhihu-main-follow">关注<span class="count">26</span></button>
+        <div class="platform"><span class="status-dot" style="background:#8a8d86"></span>推特</div>
+        <button class="source-button" data-source="twitter-main-recommend">推荐</button>
+        <button class="source-button" data-source="twitter-main-following">关注</button>
+      </div>
+      <div class="sidebar-footer">后台同步已暂停<br />B站登录状态正常</div>
+    </aside>
+
+    <main class="main">
+      <div class="mobile-bar">
+        <button class="icon-button" id="mobile-menu" aria-label="菜单" title="菜单"><i data-lucide="menu"></i></button>
+        <strong>Refresh</strong>
+        <button class="icon-button" id="mobile-inbox" aria-label="收件箱" title="收件箱"><i data-lucide="inbox"></i></button>
+      </div>
+
+      <header class="topbar">
+        <div class="heading">
+          <h1 id="page-title">为你推荐</h1>
+          <p id="page-subtitle">跨平台聚合 · 第 1 页 · 连续浏览</p>
+        </div>
+        <span class="prototype-tag"><i data-lucide="flask-conical"></i>聚合排序原型 · 实时归档样本</span>
+        <div class="top-actions">
+          <button class="icon-button" id="restore-position" aria-label="回到阅读位置" title="回到阅读位置"><i data-lucide="locate-fixed"></i></button>
+          <button class="action-button" id="restart-feed"><i data-lucide="rotate-ccw"></i><span>重新开始</span></button>
+        </div>
+      </header>
+
+      <div class="new-content-wrap">
+        <button class="new-content" id="new-content"><i data-lucide="arrow-up"></i>发现 8 条新内容</button>
+      </div>
+
+      <section class="content" id="feed-view" aria-label="内容流">
+        <div class="feed-meta">
+          <span class="live-status"><span class="status-dot"></span><strong>聚合推荐中</strong></span>
+          <span class="divider"></span>
+          <span id="generation-label">Generation 08-09 21:28</span>
+          <span class="divider"></span>
+          <span id="position-label">已加载 0 条</span>
+        </div>
+        <div class="feed-shell">
+          <div class="feed-grid" id="feed-grid"></div>
+          <aside class="recommendation-rail" aria-label="推荐上下文">
+            <div class="rail-section">
+              <h2 class="rail-title">本轮来源构成</h2>
+              <div class="mix-row"><span>B站</span><div class="mix-bar"><div class="mix-fill" style="width:38%;background:var(--cyan)"></div></div><span>38%</span></div>
+              <div class="mix-row"><span>知乎</span><div class="mix-bar"><div class="mix-fill" style="width:34%;background:#557eb8"></div></div><span>34%</span></div>
+              <div class="mix-row"><span>推特</span><div class="mix-bar"><div class="mix-fill" style="width:28%;background:var(--coral)"></div></div><span>28%</span></div>
+            </div>
+            <div class="rail-section">
+              <h2 class="rail-title">正在关注的方向</h2>
+              <div class="topic-list"><span class="topic">AI 工具</span><span class="topic">产品设计</span><span class="topic">游戏</span><span class="topic">技术观察</span></div>
+            </div>
+            <div>
+              <h2 class="rail-title">本轮状态</h2>
+              <p>已归档内容与实时新内容共同参与排序；加载更多时保持本轮上下文。</p>
+            </div>
+          </aside>
+        </div>
+        <div class="feed-footer" id="feed-footer"><span class="loading-more"><span class="spinner"></span>正在打开本轮推荐</span></div>
+      </section>
+
+      <section class="content hidden" id="inbox-view" aria-label="收件箱">
+        <div class="inbox-toolbar">
+          <div class="segmented" role="group" aria-label="排序">
+            <button class="segment active">未读优先</button>
+            <button class="segment">按时间</button>
+          </div>
+          <label class="check-control"><input type="checkbox" />只看未读</label>
+          <button class="action-button" style="margin-left:auto"><i data-lucide="check-check"></i>全部已读</button>
+        </div>
+        <div class="feed-meta"><strong>210 条未读</strong><span class="divider"></span><span>跨来源归档</span></div>
+        <div class="inbox-list" id="inbox-list"></div>
+      </section>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+
+  <script>
+    if (!window.lucide) throw new Error('Lucide failed to load')
+    window.lucide.createIcons()
+
+    const API = 'http://127.0.0.1:13002/api/v1'
+    const SOURCE_DATA = {
+      all: { label: '为你推荐', platform: 'all' },
+      'bilibili-main-recommend': { querySource: 'bilibili-main-popular', label: 'B站 · 推荐', layout: 'grid' },
+      'bilibili-main-follow': { querySource: 'bilibili-main-follow', label: 'B站 · 关注', layout: 'grid' },
+      'zhihu-main-recommend': { querySource: 'zhihu-main-recommend', label: '知乎 · 推荐', layout: 'list' },
+      'zhihu-main-follow': { querySource: 'zhihu-main-follow', label: '知乎 · 关注', layout: 'list' },
+      'twitter-main-recommend': { querySource: 'twitter-main-recommend', label: '推特 · 推荐', layout: 'list' },
+      'twitter-main-following': { querySource: 'twitter-main-following', label: '推特 · 关注', layout: 'list' },
+    }
+
+    const state = {
+      view: 'feed',
+      source: 'all',
+      pageSize: 8,
+      rendered: 0,
+      loading: false,
+      exhausted: false,
+      messages: [],
+      positions: new Map(),
+      generation: new Date(),
+      newContentTimer: null,
+    }
+
+    const grid = document.querySelector('#feed-grid')
+    const footer = document.querySelector('#feed-footer')
+    const pageTitle = document.querySelector('#page-title')
+    const pageSubtitle = document.querySelector('#page-subtitle')
+    const positionLabel = document.querySelector('#position-label')
+    const generationLabel = document.querySelector('#generation-label')
+    const newContent = document.querySelector('#new-content')
+    const toast = document.querySelector('#toast')
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>'"]/g, char => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;',
+      })[char])
+    }
+
+    function mediaUrl(message) {
+      const media = message.spec.media?.find(item => item.type === 'image')
+      if (!media) return ''
+      const value = media.url || media.originUrl
+      return value.startsWith('/') ? `http://127.0.0.1:13002${value}` : value
+    }
+
+    function formatNumber(value) {
+      const number = Number(value || 0)
+      if (number >= 1000000) return `${(number / 1000000).toFixed(1)}M`
+      if (number >= 10000) return `${(number / 10000).toFixed(1)}万`
+      if (number >= 1000) return `${(number / 1000).toFixed(1)}K`
+      return String(number)
+    }
+
+    function formatDuration(seconds) {
+      const value = Number(seconds || 0)
+      const hours = Math.floor(value / 3600)
+      const minutes = Math.floor((value % 3600) / 60)
+      const rest = value % 60
+      return hours
+        ? `${hours}:${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}`
+        : `${minutes}:${String(rest).padStart(2, '0')}`
+    }
+
+    function platformOf(message) {
+      return message.metadata.labels?.platform || (message.metadata.name || '').split('-')[0]
+    }
+
+    function platformMeta(message) {
+      const platform = platformOf(message)
+      if (platform === 'bilibili') return { name: 'B站', icon: 'play-square', className: 'bilibili' }
+      if (platform === 'zhihu') return { name: '知乎', icon: 'book-open-text', className: 'zhihu' }
+      if (platform === 'twitter') return { name: '推特', icon: 'at-sign', className: 'twitter' }
+      throw new Error(`Unknown platform ${platform}`)
+    }
+
+    function recommendationReason(message, index) {
+      const platform = platformOf(message)
+      const reasons = platform === 'bilibili'
+        ? ['与你看过的视频相关', '这个主题最近受到关注', '来自你常看的创作者方向']
+        : platform === 'zhihu'
+          ? ['延伸你读过的问题', '你关注的专业话题', '高质量长内容']
+          : ['你关注的人正在讨论', '与你收藏的主题相关', '正在升温的讨论']
+      return reasons[index % reasons.length]
+    }
+
+    function streamHead(message, index) {
+      const platform = platformMeta(message)
+      return `
+        <div class="stream-head">
+          <span class="platform-chip ${platform.className}"><i data-lucide="${platform.icon}"></i>${platform.name}</span>
+          <span class="reason">${recommendationReason(message, index)}</span>
+          <button class="card-menu" aria-label="推荐反馈" title="推荐反馈"><i data-lucide="ellipsis"></i></button>
+        </div>`
+    }
+
+    function videoCard(message, index) {
+      const image = mediaUrl(message)
+      const title = message.spec.title || message.spec.text || message.metadata.name
+      const author = message.spec.author?.name || message.spec.author?.handle || '未知作者'
+      const stats = message.spec.stats || {}
+      const imageHtml = image
+        ? `<img src="${escapeHtml(image)}" alt="" loading="${index < 6 ? 'eager' : 'lazy'}" />`
+        : ''
+      return `
+        <article class="video-card stream-card" data-message="${escapeHtml(message.metadata.name)}">
+          ${streamHead(message, index)}
+          <button class="cover-button" data-open="${escapeHtml(message.spec.url || '')}" title="打开原内容">
+            ${imageHtml}
+            ${message.spec.durationSec ? `<span class="duration">${formatDuration(message.spec.durationSec)}</span>` : ''}
+          </button>
+          <div class="video-body">
+            <h2 class="video-title">${escapeHtml(title)}</h2>
+            <div class="author-row"><i data-lucide="circle-user-round"></i><span>${escapeHtml(author)}</span><span class="unread-mark" title="未读"></span></div>
+            <div class="stats-row">
+              <span class="stat"><i data-lucide="play"></i>${formatNumber(stats.views)}</span>
+              <span class="stat"><i data-lucide="thumbs-up"></i>${formatNumber(stats.likes)}</span>
+              <span class="stat"><i data-lucide="message-circle"></i>${formatNumber(stats.danmaku || stats.comments)}</span>
+            </div>
+          </div>
+        </article>`
+    }
+
+    function textCard(message, index) {
+      const platform = platformOf(message)
+      const image = mediaUrl(message)
+      const author = message.spec.author?.name || message.spec.author?.handle || '未知作者'
+      const title = message.spec.title || ''
+      const text = message.spec.text || message.spec.content || ''
+      const stats = message.spec.stats || {}
+      const initial = [...author][0] || '?'
+      const isZhihu = platform === 'zhihu'
+      return `
+        <article class="stream-card" data-message="${escapeHtml(message.metadata.name)}">
+          ${streamHead(message, index)}
+          <div class="text-card-body">
+            <div class="post-author">
+              <span class="avatar">${escapeHtml(initial)}</span>
+              <div class="author-copy"><div class="author-name">${escapeHtml(author)}</div><div class="author-meta">来自 ${isZhihu ? '知乎' : '推特'} · 刚刚归档</div></div>
+              <span class="unread-mark" title="未读"></span>
+            </div>
+            ${isZhihu && title ? `<h2 class="answer-title">${escapeHtml(title)}</h2>` : ''}
+            <p class="${isZhihu ? 'answer-excerpt' : 'tweet-text'}">${escapeHtml(text || title)}</p>
+            ${image ? `<img class="text-media" src="${escapeHtml(image)}" alt="" loading="lazy" />` : ''}
+            <div class="text-stats">
+              ${isZhihu
+                ? `<span><i data-lucide="arrow-big-up"></i>${formatNumber(stats.voteup)} 赞同</span><span><i data-lucide="message-circle"></i>${formatNumber(stats.comments)} 评论</span>`
+                : `<span><i data-lucide="heart"></i>${formatNumber(stats.likes)}</span><span><i data-lucide="repeat-2"></i>${formatNumber(stats.retweets)}</span><span><i data-lucide="eye"></i>${formatNumber(stats.views)}</span>`}
+              <button class="card-menu" style="margin-left:auto" data-open="${escapeHtml(message.spec.url || '')}" aria-label="打开原内容" title="打开原内容"><i data-lucide="external-link"></i></button>
+            </div>
+          </div>
+        </article>`
+    }
+
+    function feedCard(message, index) {
+      return platformOf(message) === 'bilibili' ? videoCard(message, index) : textCard(message, index)
+    }
+
+    function inboxItem(message) {
+      const image = mediaUrl(message)
+      const title = message.spec.title || message.spec.text || message.metadata.name
+      const author = message.spec.author?.name || message.spec.author?.handle || '未知作者'
+      const platform = platformMeta(message)
+      return `
+        <article class="inbox-item">
+          ${image ? `<img class="inbox-thumb" src="${escapeHtml(image)}" alt="" loading="lazy" />` : '<div class="inbox-thumb"></div>'}
+          <div class="inbox-copy">
+            <span class="source-chip">${platform.name} · 推荐</span>
+            <h2 class="inbox-title">${escapeHtml(title)}</h2>
+            <div class="inbox-subtitle">${escapeHtml(author)} · 今天</div>
+          </div>
+          <button class="read-button" aria-label="标记已读" title="标记已读"><i data-lucide="circle"></i></button>
+        </article>`
+    }
+
+    async function fetchSourceMessages(sourceName) {
+      const source = SOURCE_DATA[sourceName]
+      const params = new URLSearchParams({ labelSelector: `source=${source.querySource}`, limit: '32', sort: 'time' })
+      const response = await fetch(`${API}/messages?${params}`)
+      if (!response.ok) throw new Error(`Refresh API 返回 ${response.status}`)
+      const body = await response.json()
+      if (!Array.isArray(body.items)) throw new Error('Refresh API 响应中缺少 items')
+      return body.items.filter(message => message.spec.media?.length || message.spec.title || message.spec.text)
+    }
+
+    function rankAggregate(groups) {
+      const buckets = {
+        bilibili: groups[0],
+        zhihu: groups[1],
+        twitter: groups[2],
+      }
+      const pattern = ['twitter', 'zhihu', 'bilibili', 'twitter', 'bilibili', 'zhihu']
+      const ranked = []
+      let cursor = 0
+      while (Object.values(buckets).some(items => items.length > 0)) {
+        const platform = pattern[cursor % pattern.length]
+        const item = buckets[platform].shift()
+        if (item) ranked.push(item)
+        cursor++
+      }
+      return ranked
+    }
+
+    async function fetchAggregateMessages() {
+      const groups = await Promise.all([
+        fetchSourceMessages('bilibili-main-recommend'),
+        fetchSourceMessages('zhihu-main-recommend'),
+        fetchSourceMessages('twitter-main-recommend'),
+      ])
+      return rankAggregate(groups)
+    }
+
+    async function fetchMessages() {
+      return state.source === 'all' ? fetchAggregateMessages() : fetchSourceMessages(state.source)
+    }
+
+    function updateHeader() {
+      const source = SOURCE_DATA[state.source]
+      pageTitle.textContent = state.view === 'feed' ? source.label : '收件箱'
+      const pages = Math.max(1, Math.ceil(state.rendered / state.pageSize))
+      pageSubtitle.textContent = state.view === 'feed'
+        ? `${state.source === 'all' ? '跨平台聚合' : '单来源筛选'} · 第 ${pages} 页 · 连续浏览`
+        : '跨来源归档 · 本地分页'
+      positionLabel.textContent = `已加载 ${state.rendered} 条`
+      generationLabel.textContent = `Generation ${String(state.generation.getMonth() + 1).padStart(2, '0')}-${String(state.generation.getDate()).padStart(2, '0')} ${String(state.generation.getHours()).padStart(2, '0')}:${String(state.generation.getMinutes()).padStart(2, '0')}`
+    }
+
+    function renderNextPage() {
+      if (state.loading || state.exhausted || state.view !== 'feed') return
+      state.loading = true
+      footer.innerHTML = '<span class="loading-more"><span class="spinner"></span>正在获取下一页</span>'
+      window.setTimeout(() => {
+        const next = state.messages.slice(state.rendered, state.rendered + state.pageSize)
+        if (next.length === 0) {
+          state.exhausted = true
+          state.loading = false
+          footer.textContent = '本轮内容已经到底'
+          return
+        }
+        grid.insertAdjacentHTML('beforeend', next.map((message, index) => feedCard(message, state.rendered + index)).join(''))
+        state.rendered += next.length
+        state.loading = false
+        updateHeader()
+        window.lucide.createIcons()
+        footer.textContent = state.rendered >= state.messages.length ? '本轮内容已经到底' : '继续向下浏览'
+      }, state.rendered === 0 ? 180 : 650)
+    }
+
+    async function openSource(sourceName, restore = true) {
+      if (!SOURCE_DATA[sourceName]) throw new Error(`Unknown source ${sourceName}`)
+      state.positions.set(state.source, window.scrollY)
+      state.source = sourceName
+      state.rendered = 0
+      state.exhausted = false
+      state.messages = []
+      grid.innerHTML = ''
+      footer.innerHTML = '<span class="loading-more"><span class="spinner"></span>正在打开内容流</span>'
+      document.querySelectorAll('.source-button').forEach(button => button.classList.toggle('active', button.dataset.source === sourceName))
+      updateHeader()
+      try {
+        state.messages = await fetchMessages()
+        if (state.messages.length === 0) throw new Error(`${SOURCE_DATA[sourceName].label} 暂无已归档样本`)
+        renderNextPage()
+        if (restore) window.setTimeout(() => window.scrollTo({ top: state.positions.get(sourceName) || 0 }), 220)
+      } catch (error) {
+        footer.innerHTML = `<div class="error-panel">${escapeHtml(error.message)}</div>`
+      }
+    }
+
+    function showView(view) {
+      state.view = view
+      document.querySelector('#feed-view').classList.toggle('hidden', view !== 'feed')
+      document.querySelector('#inbox-view').classList.toggle('hidden', view !== 'inbox')
+      document.querySelectorAll('.nav-button[data-view]').forEach(button => button.classList.toggle('active', button.dataset.view === view))
+      document.querySelector('.source-nav').classList.toggle('hidden', view !== 'feed')
+      document.querySelector('#restore-position').classList.toggle('hidden', view !== 'feed')
+      document.querySelector('#restart-feed').classList.toggle('hidden', view !== 'feed')
+      updateHeader()
+      if (view === 'inbox') void renderInbox()
+    }
+
+    async function renderInbox() {
+      const inbox = document.querySelector('#inbox-list')
+      inbox.innerHTML = '<div class="feed-footer"><span class="loading-more"><span class="spinner"></span>正在读取本地归档</span></div>'
+      try {
+        const items = (state.source === 'all' ? state.messages : await fetchAggregateMessages()).slice(0, 12)
+        inbox.innerHTML = items.map(inboxItem).join('')
+        window.lucide.createIcons()
+      } catch (error) {
+        inbox.innerHTML = `<div class="error-panel">${escapeHtml(error.message)}</div>`
+      }
+    }
+
+    function notify(message) {
+      toast.textContent = message
+      toast.classList.add('visible')
+      window.setTimeout(() => toast.classList.remove('visible'), 2200)
+    }
+
+    function restartFeed(fromNewContent = false) {
+      newContent.classList.remove('visible')
+      state.generation = new Date()
+      state.positions.set(state.source, 0)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      const reordered = [...state.messages]
+      if (reordered.length > 3) reordered.unshift(...reordered.splice(3, 2))
+      state.messages = reordered
+      state.rendered = 0
+      state.exhausted = false
+      grid.innerHTML = ''
+      updateHeader()
+      renderNextPage()
+      notify(fromNewContent ? '已切换到新一轮内容' : '已从顶部重新开始')
+    }
+
+    document.querySelectorAll('.source-button').forEach(button => button.addEventListener('click', () => {
+      showView('feed')
+      openSource(button.dataset.source)
+    }))
+    document.querySelectorAll('.nav-button[data-view]').forEach(button => button.addEventListener('click', () => {
+      if (button.dataset.view === 'feed' && state.source !== 'all') void openSource('all')
+      showView(button.dataset.view)
+    }))
+    document.querySelector('#mobile-inbox').addEventListener('click', () => showView(state.view === 'inbox' ? 'feed' : 'inbox'))
+    document.querySelector('#mobile-menu').addEventListener('click', () => notify('移动端来源选择将在抽屉中呈现'))
+    document.querySelector('#restart-feed').addEventListener('click', () => restartFeed(false))
+    document.querySelector('#restore-position').addEventListener('click', () => {
+      window.scrollTo({ top: state.positions.get(state.source) || 0, behavior: 'smooth' })
+      notify('已回到上次阅读位置')
+    })
+    newContent.addEventListener('click', () => restartFeed(true))
+    grid.addEventListener('click', event => {
+      const target = event.target.closest('[data-open]')
+      if (target?.dataset.open) window.open(target.dataset.open, '_blank', 'noopener')
+      const feedback = event.target.closest('.card-menu:not([data-open])')
+      if (feedback) notify('推荐反馈已展开：减少此类内容 · 屏蔽作者')
+    })
+    document.querySelector('#inbox-view').addEventListener('click', event => {
+      const segment = event.target.closest('.segment')
+      if (segment) {
+        document.querySelectorAll('.segment').forEach(item => item.classList.toggle('active', item === segment))
+      }
+      const read = event.target.closest('.read-button')
+      if (read) {
+        read.innerHTML = '<i data-lucide="check-circle-2"></i>'
+        read.style.color = 'var(--success)'
+        window.lucide.createIcons()
+      }
+    })
+
+    const observer = new IntersectionObserver(entries => {
+      if (entries[0]?.isIntersecting) renderNextPage()
+    }, { rootMargin: '600px 0px' })
+    observer.observe(footer)
+
+    state.newContentTimer = window.setTimeout(() => newContent.classList.add('visible'), 3200)
+    openSource(state.source, false)
+  </script>
+</body>
+</html>

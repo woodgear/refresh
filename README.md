@@ -146,4 +146,5 @@ http://127.0.0.1:${WEB_PORT}
 | --- | --- |
 | [AGENTS.md](AGENTS.md) | 当前架构、约定、API 速查、常见任务操作手册 |
 | [docs/design.md](docs/design.md) | 原始设计蓝图和设计取舍 |
+| [docs/feed-continuation-and-aggregation.md](docs/feed-continuation-and-aggregation.md) | 获取更多、重新开始、跨平台聚合与 mockup 交接 |
 | [docs/progress.md](docs/progress.md) | 实施日志、踩坑记录和后续候选项 |
