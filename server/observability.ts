@@ -5,20 +5,12 @@ interface DurationSample {
   attrs: Record<string, string | number | boolean>
 }
 
-interface RumSample {
-  name: string
-  value: number
-  at: string
-  attrs: Record<string, string | number | boolean>
-}
-
 const MAX_RECENT = 300
 const httpDurations = new Map<string, { count: number; totalMs: number; maxMs: number }>()
 const operationDurations = new Map<string, { count: number; totalMs: number; maxMs: number }>()
 const resourceWrites = new Map<string, number>()
 const validationFailures = new Map<string, number>()
 const recentSlow: DurationSample[] = []
-const recentRum: RumSample[] = []
 
 function nowIso(): string {
   return new Date().toISOString()
@@ -55,13 +47,6 @@ export function recordResourceWrite(kind: string): void {
 
 export function recordValidationFailure(kind: string): void {
   validationFailures.set(kind, (validationFailures.get(kind) ?? 0) + 1)
-}
-
-export function recordRum(samples: RumSample[]): void {
-  for (const sample of samples) {
-    recentRum.unshift({ ...sample, at: sample.at || nowIso(), attrs: sample.attrs ?? {} })
-  }
-  recentRum.length = Math.min(recentRum.length, MAX_RECENT)
 }
 
 export function metricsText(): string {
@@ -104,7 +89,6 @@ export function observabilitySummary() {
       operations: operationDurations.size,
       resourceWriteKinds: resourceWrites.size,
       recentSlow: recentSlow.slice(0, 50),
-      recentRum: recentRum.slice(0, 50),
     },
   }
 }
@@ -120,6 +104,7 @@ function normalizePath(path: string): string {
     .replace(/\/api\/v1\/loginsessions\/[^/?]+\/input/g, '/api/v1/loginsessions/:id/input')
     .replace(/\/api\/v1\/loginsessions\/[^/?]+/g, '/api/v1/loginsessions/:id')
     .replace(/\/api\/v1\/media\/[^/?]+/g, '/api/v1/media/:file')
+    .replace(/\/api\/v1\/media-variants\/[^/?]+\/[^/?]+/g, '/api/v1/media-variants/:variant/:file')
     .replace(/\/rss\/[^/?]+/g, '/rss/:source')
 }
 

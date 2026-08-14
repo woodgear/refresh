@@ -3,7 +3,7 @@
 
 import { ACCOUNTS, getSource } from './config'
 import { normalizeItem, expandRawItems } from './normalize'
-import { localMediaUrl } from './media'
+import { localMediaUrl, mediaPresentationForUrl } from './media'
 import { rlog } from './logger'
 import {
   applyOverlay,
@@ -36,6 +36,21 @@ const windows = new Map<string, Resource>()
 function mergeDerivedSpec(oldSpec: Record<string, unknown>, newSpec: Record<string, unknown>): void {
   if (newSpec.stats) oldSpec.stats = newSpec.stats
   if (newSpec.durationSec !== undefined) oldSpec.durationSec = newSpec.durationSec
+}
+
+function attachMediaPresentation(media: { url: string | null; width?: number; height?: number }): void {
+  if (!media.url) return
+  const presentation = mediaPresentationForUrl(media.url, media)
+  if (presentation) Object.assign(media, { presentation })
+}
+
+function localizeAvatar(author: { avatar?: string | null } | undefined): void {
+  if (!author?.avatar) return
+  const localAvatar = localMediaUrl(author.avatar)
+  if (!localAvatar) return
+  author.avatar = localAvatar
+  const presentation = mediaPresentationForUrl(localAvatar)
+  if (presentation) Object.assign(author, { avatarPresentation: presentation })
 }
 
 export async function ingestWindow(win: WindowFile, opts: { persist?: boolean } = {}): Promise<{ newCount: number; dupCount: number }> {
@@ -72,7 +87,10 @@ export async function ingestWindow(win: WindowFile, opts: { persist?: boolean } 
     } else {
       newCount++
       // 媒体/头像回填：已本地化的换成 /api/v1/media/<hash>，否则保留外链
-      for (const m of message.spec.media) m.url = m.url ?? localMediaUrl(m.originUrl)
+      for (const m of message.spec.media) {
+        m.url = m.url ?? localMediaUrl(m.originUrl)
+        attachMediaPresentation(m)
+      }
       // 不同尺寸参数的同一张图本地化后哈希相同，按最终地址去重
       const seenMedia = new Set<string>()
       message.spec.media = message.spec.media.filter(m => {
@@ -81,9 +99,7 @@ export async function ingestWindow(win: WindowFile, opts: { persist?: boolean } 
         seenMedia.add(key)
         return true
       })
-      if (message.spec.author?.avatar) {
-        message.spec.author.avatar = localMediaUrl(message.spec.author.avatar) ?? message.spec.author.avatar
-      }
+      localizeAvatar(message.spec.author)
       // 正文 HTML 里的图也换成本地化地址（RSS/UI 都不再依赖图床防盗链）
       if (message.spec.content) {
         message.spec.content = message.spec.content.replace(/(<img[^>]+src=")([^"]+)(")/g, (whole, pre, src, post) => {
@@ -125,7 +141,7 @@ export async function ingestWindow(win: WindowFile, opts: { persist?: boolean } 
         changed.set(`Author/${existingAuthor.metadata.name}`, existingAuthor)
       } else {
         const spec = stripUndefined(author.spec)
-        if (spec.avatar) spec.avatar = localMediaUrl(spec.avatar) ?? spec.avatar
+        localizeAvatar(spec)
         const resource: Resource<Record<string, unknown>, AuthorStatus> = {
           apiVersion: 'radar/v1',
           kind: AuthorResource.kind,

@@ -30,6 +30,7 @@ export const WINDOWS_DIR = join(DATA_DIR, 'windows')
 export const FOLLOWEE_WINDOWS_DIR = join(DATA_DIR, 'followee-windows')
 export const OVERLAY_DIR = join(DATA_DIR, 'overlay')
 export const MEDIA_DIR = join(DATA_DIR, 'media')
+export const MEDIA_VARIANTS_DIR = join(DATA_DIR, 'media-variants')
 
 // ---------- 资源信封 ----------
 
@@ -68,6 +69,7 @@ export async function ensureDirs(): Promise<void> {
     mkdir(FOLLOWEE_WINDOWS_DIR, { recursive: true }),
     mkdir(OVERLAY_DIR, { recursive: true }),
     mkdir(MEDIA_DIR, { recursive: true }),
+    mkdir(MEDIA_VARIANTS_DIR, { recursive: true }),
   ])
   await initResourceStore({ dataDir: DATA_DIR, windowsDir: WINDOWS_DIR, followeeWindowsDir: FOLLOWEE_WINDOWS_DIR, overlayDir: OVERLAY_DIR, mediaDir: MEDIA_DIR })
 }
@@ -179,12 +181,12 @@ export async function writeSchedulerSpecToStore(spec: Record<string, unknown>): 
   await resourceWriteSchedulerSpec(spec)
 }
 
-export async function readMediaManifestFromStore(): Promise<Record<string, { file: string; bytes: number }>> {
+export async function readMediaManifestFromStore(): Promise<Record<string, { file: string; bytes: number; width?: number; height?: number }>> {
   await ensureDirs()
   return resourceReadMediaManifest()
 }
 
-export async function putMediaObject(originUrl: string, entry: { file: string; bytes: number }): Promise<void> {
+export async function putMediaObject(originUrl: string, entry: { file: string; bytes: number; width?: number; height?: number }): Promise<void> {
   await ensureDirs()
   await resourcePutMediaObject(originUrl, entry)
 }

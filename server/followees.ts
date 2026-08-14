@@ -21,7 +21,7 @@ import {
   type NormalizedFollowee,
 } from './followee-fetcher'
 import { parseSelector } from './resources'
-import { downloadAll, localMediaUrl } from './media'
+import { downloadAll, localMediaUrl, mediaPresentationForUrl } from './media'
 
 export interface FolloweeStatus extends Record<string, unknown> {
   following: boolean
@@ -251,10 +251,7 @@ async function executeFolloweeWindow(
     await downloadAll(result.followees.map(f => f.spec.avatar).filter((url): url is string => !!url && url.startsWith('http')), log)
     const followees = result.followees.map(f => ({
       ...f,
-      spec: {
-        ...f.spec,
-        avatar: f.spec.avatar ? localMediaUrl(f.spec.avatar) ?? f.spec.avatar : null,
-      },
+      spec: localizeFolloweeAvatar(f.spec),
     }))
     const finishedAt = new Date().toISOString()
     resource.spec = { account: account.name, trigger, followees }
@@ -296,6 +293,18 @@ async function executeFolloweeWindow(
     await ingestFolloweeWindow(win)
   } else {
     registerFolloweeWindowResource(win)
+  }
+}
+
+function localizeFolloweeAvatar(spec: FolloweeSpec): FolloweeSpec {
+  if (!spec.avatar) return { ...spec, avatar: null }
+  const localAvatar = localMediaUrl(spec.avatar)
+  if (!localAvatar) return spec
+  const presentation = mediaPresentationForUrl(localAvatar)
+  return {
+    ...spec,
+    avatar: localAvatar,
+    ...(presentation ? { avatarPresentation: presentation } : {}),
   }
 }
 

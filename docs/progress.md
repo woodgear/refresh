@@ -46,6 +46,14 @@ verify.sh 全绿（A1-A4, A6, A9）且 A5/A7/A8 均为 [A] awaiting-user → loo
 
 ## 迭代日志（续）
 
+- 2026-07-14 / 首页虚拟列表 / 首三张卡片的第一张内容图改为 `eager/high`，其余图片保持 `lazy/auto`；列表模式接入 `react-virtuoso@4.18.10`，由成熟库处理动态卡片高度、图片加载后的重测量和滚动窗口，grid 瀑布流保持原实现。线上探针仍取 200 条消息，但桌面/移动端只挂载 2-4 张卡片；OpenObserve 精确 probe 对比中，reload data-to-next-paint 从 361.1ms 降到 19.5ms，LCP 从 536ms 降到 240ms，105 项 verify 全绿。
+
+- 2026-07-14 / LCP attribution 观测 / 前端新增 `web-vitals/attribution`，把 LCP 拆成 TTFB、resource load delay、resource load duration、element render delay 上报到 OpenObserve `refresh_perf` 日志；同时上报 FCP/TTFB/CLS/INP attribution。`ProgressiveImage` 增加 `data-perf-target` 与 `progressive_image.loaded` 聚合样本，区分 `message.grid_cover`、`message.list_media`、`message.author_avatar`、`followee.avatar` 等目标，后续可直接用 OpenObserve 判断 LCP 具体耗时归因。
+
+- 2026-07-14 / 渐进式图片加载 / 媒体管道新增 `sharp` 变体生成与 `/api/v1/media-variants/:variant/:file`，对原图保留内容寻址 immutable 语义；API 返回 `presentation.placeholder` + `variants`，前端新增 `ProgressiveImage`，列表/网格媒体、作者头像、关注人头像改用 LQIP/skeleton + `srcSet/sizes`，全尺寸预览继续拉原图。verify 新增 WebP 变体断言，105 断言全绿。
+
+- 2026-07-14 / OpenObserve 接入 / 前端自研 `/api/v1/rum` 退役，改用 `@openobserve/browser-rum` + `@openobserve/browser-logs` 直连 `https://openobserve.k2.woodgear.me`，启用 resources/long tasks/user interactions/session replay 和 W3C `traceparent` 注入；后端新增 `server/tracing.ts`，用 `@hono/otel` + OTLP HTTP exporter 发 Hono request spans 到本机 collector (`127.0.0.1:4318/v1/traces`)。`/api/v1/observability` 和 `/metrics` 保留为本地摘要/Prometheus scrape。verify 102 断言全绿。
+
 - 2026-06-11 / 公网部署配置 / scripts/start-k2-tmux.sh 移除具体公网域名默认值，改为必填 REFRESH_PUBLIC_URL；README 整理项目用途、隐私边界、部署方式和 Chrome 启动说明；.gitignore 补充 .env*，准备将 repo 公开。
 
 - 2026-06-11 / 推特中继登录 / login.ts 将推特 LoginSession 从 window 提示改为 password 中继模式: 服务端经 CDP 识别当前可见输入框(账号/密码/2FA 等), 前端渲染同一步表单并 POST /loginsessions/{id}/input 代填提交; 适配 x.com 当前 onboarding 登录页的隐藏 password 镜像和非 button “继续”。verify 新增推特 mock 两步中继断言, 81 断言全绿。

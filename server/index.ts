@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import { httpInstrumentationMiddleware } from '@hono/otel'
 import { extname, join, normalize } from 'node:path'
 import { apiV1 } from './api'
 import { rssApp } from './rss'
@@ -10,6 +11,7 @@ import { buildFolloweeIndex } from './followees'
 import { initScheduler } from './scheduler'
 import { rlog } from './logger'
 import { metricsText, recordHttp } from './observability'
+import { startTracing } from './tracing'
 
 const webDistDir = join(import.meta.dir, '..', 'dist')
 const staticContentTypes = new Map([
@@ -38,7 +40,15 @@ async function staticFileResponse(pathname: string): Promise<Response | undefine
   return new Response(file, contentType ? { headers: { 'Content-Type': contentType } } : undefined)
 }
 
+const tracing = startTracing()
 const app = new Hono()
+app.use('*', httpInstrumentationMiddleware({
+  serviceName: tracing.serviceName,
+  serviceVersion: tracing.serviceVersion,
+  captureRequestHeaders: ['traceparent', 'tracestate', 'user-agent', 'x-forwarded-for'],
+  captureResponseHeaders: ['content-type'],
+  spanNameFactory: c => `${c.req.method} ${c.req.path}`,
+}))
 app.use('*', cors())
 app.use('*', async (c, next) => {
   const startedAt = performance.now()

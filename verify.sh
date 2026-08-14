@@ -62,8 +62,7 @@ case "$METRICS" in
   *refresh_http_request_duration_ms_count*) ok "Prometheus metrics endpoint" ;;
   *) fail "metrics endpoint 缺少 HTTP 指标" ;;
 esac
-RUM_ACCEPTED=$(curl -s -X POST "$BASE/rum" -d '{"samples":[{"name":"test.metric","value":12.5,"attrs":{"route":"/"}}]}' | jq -r .accepted)
-assert_eq "1" "$RUM_ACCEPTED" "RUM intake 接收样本"
+assert_eq "404" "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/rum" -d '{"samples":[{"name":"test.metric","value":12.5}]}' )" "自研 RUM intake 已移除"
 assert_eq "ObservabilitySummary" "$(curl -s "$BASE/observability" | jq -r .kind)" "observability 摘要 API"
 
 log "== A2(mock): POST refreshwindows → Succeeded，档案落盘 =="
@@ -116,6 +115,16 @@ MEDIA_CODE=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${PORT}${M
 assert_eq "200" "$MEDIA_CODE" "GET /api/v1/media/{hash} 可访问"
 MEDIA_TYPE=$(curl -s -o /dev/null -w '%{content_type}' "http://localhost:${PORT}${MEDIA_URL}")
 assert_eq "image/png" "$MEDIA_TYPE" "媒体 content-type 正确"
+VARIANT_URL=$(echo "$TW" | jq -r '.spec.media[0].presentation.variants.w320.url')
+case "$VARIANT_URL" in
+  /api/v1/media-variants/w320/*) ok "media[0] 暴露 w320 变体 ($VARIANT_URL)" ;;
+  *) fail "media[0] 缺少 w320 变体: $VARIANT_URL" ;;
+esac
+VARIANT_TYPE=$(curl -s -o /dev/null -w '%{content_type}' "http://localhost:${PORT}${VARIANT_URL}")
+assert_eq "image/webp" "$VARIANT_TYPE" "w320 变体返回 WebP"
+PLACEHOLDER_URL=$(echo "$TW" | jq -r '.spec.media[0].presentation.placeholder.url')
+PLACEHOLDER_TYPE=$(curl -s -o /dev/null -w '%{content_type}' "http://localhost:${PORT}${PLACEHOLDER_URL}")
+assert_eq "image/webp" "$PLACEHOLDER_TYPE" "placeholder 变体返回 WebP"
 AVATAR=$(echo "$TW" | jq -r .spec.author.avatar)
 case "$AVATAR" in
   /api/v1/media/*) ok "头像已本地化" ;;

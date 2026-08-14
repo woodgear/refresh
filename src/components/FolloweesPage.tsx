@@ -10,6 +10,7 @@ import {
   useFollowees,
   type Followee,
 } from '@/api/radar'
+import { ProgressiveImage } from '@/components/ProgressiveImage'
 
 const platforms = [
   { value: 'all', label: '全部' },
@@ -283,7 +284,15 @@ function FolloweeRow({
       />
       <a href={followee.spec.url} target="_blank" rel="noreferrer" className="hidden md:block">
         {followee.spec.avatar ? (
-          <img src={followee.spec.avatar} alt="" className="h-11 w-11 rounded-md object-cover" />
+          <ProgressiveImage
+            src={followee.spec.avatar}
+            alt=""
+            presentation={followee.spec.avatarPresentation}
+            className="h-11 w-11 rounded-md"
+            sizes="44px"
+            fallbackAspectRatio="1 / 1"
+            perfTarget="followee.avatar"
+          />
         ) : (
           <div className="flex h-11 w-11 items-center justify-center rounded-md bg-muted text-xs text-muted-foreground">
             {followee.spec.displayName.slice(0, 1)}

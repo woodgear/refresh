@@ -3,12 +3,28 @@
 // 视频不下载（只存 poster + playUrl）。知乎图床有 referer 防盗链，下载时带 referer。
 
 import { createHash } from 'crypto'
-import { writeFile } from 'fs/promises'
+import sharp from 'sharp'
+import { mkdir, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { join } from 'path'
-import { MEDIA_DIR, ensureDirs, readMediaManifestFromStore, putMediaObject } from './store'
+import { MEDIA_DIR, MEDIA_VARIANTS_DIR, ensureDirs, readMediaManifestFromStore, putMediaObject } from './store'
 
-interface ManifestEntry {
+export interface MediaVariantRef {
+  url: string
+  width: number
+  height?: number
+  bytes?: number
+  mime: 'image/webp'
+}
+
+export interface MediaPresentation {
+  width?: number
+  height?: number
+  placeholder?: MediaVariantRef
+  variants?: Record<string, MediaVariantRef>
+}
+
+export interface ManifestEntry extends MediaPresentation {
   file: string // <sha256>.<ext>
   bytes: number
 }
@@ -27,6 +43,18 @@ const EXT_BY_MIME: Record<string, string> = {
 export const MIME_BY_EXT: Record<string, string> = Object.fromEntries(
   Object.entries(EXT_BY_MIME).map(([mime, ext]) => [ext, mime]),
 )
+
+const RASTER_VARIANT_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp', 'avif'])
+
+const MEDIA_VARIANTS = {
+  placeholder: { width: 32, quality: 35, blur: 8 },
+  w320: { width: 320, quality: 74 },
+  w640: { width: 640, quality: 76 },
+  w960: { width: 960, quality: 78 },
+  w1280: { width: 1280, quality: 80 },
+} as const
+
+export type MediaVariantName = keyof typeof MEDIA_VARIANTS
 
 function refererFor(url: string): string | undefined {
   if (/zhimg\.com|zhihu\.com/.test(url)) return 'https://www.zhihu.com/'
@@ -65,6 +93,53 @@ export function localMediaUrl(originUrl: string): string | null {
   return entry ? `/api/v1/media/${entry.file}` : null
 }
 
+export function localMediaPresentation(originUrl: string): MediaPresentation | null {
+  const entry = manifest?.[originUrl]
+  return entry ? mediaPresentationForFile(entry.file, entry) : null
+}
+
+export function mediaPresentationForUrl(url: string | null | undefined, dimensions?: { width?: number; height?: number }): MediaPresentation | null {
+  const file = mediaFileFromUrl(url)
+  if (!file) return null
+  return mediaPresentationForFile(file, dimensions)
+}
+
+function mediaFileFromUrl(url: string | null | undefined): string | null {
+  if (!url?.startsWith('/api/v1/media/')) return null
+  const file = url.slice('/api/v1/media/'.length).split(/[?#]/)[0]
+  return mediaFilePath(file) ? file : null
+}
+
+function mediaPresentationForFile(file: string, dimensions?: { width?: number; height?: number }): MediaPresentation | null {
+  const ext = file.split('.').pop()?.toLowerCase()
+  if (!ext || !RASTER_VARIANT_EXTS.has(ext)) return null
+  const [hash] = file.split('.')
+  const aspectHeight = dimensions?.width && dimensions.height ? Math.round((MEDIA_VARIANTS.w320.width * dimensions.height) / dimensions.width) : undefined
+  return {
+    width: dimensions?.width,
+    height: dimensions?.height,
+    placeholder: {
+      url: `/api/v1/media-variants/placeholder/${file}`,
+      width: MEDIA_VARIANTS.placeholder.width,
+      height: aspectHeight ? Math.max(1, Math.round((MEDIA_VARIANTS.placeholder.width * aspectHeight) / MEDIA_VARIANTS.w320.width)) : undefined,
+      mime: 'image/webp',
+    },
+    variants: Object.fromEntries(
+      Object.entries(MEDIA_VARIANTS)
+        .filter(([name]) => name !== 'placeholder')
+        .map(([name, spec]) => [
+          name,
+          {
+            url: `/api/v1/media-variants/${name}/${hash}.${ext}`,
+            width: spec.width,
+            height: dimensions?.width && dimensions.height ? Math.max(1, Math.round((spec.width * dimensions.height) / dimensions.width)) : undefined,
+            mime: 'image/webp' as const,
+          },
+        ]),
+    ),
+  }
+}
+
 /** 下载并登记一个媒体 URL（幂等）；失败返回 null，不抛 */
 export async function downloadMedia(originUrl: string, log: (s: string) => void = () => {}): Promise<string | null> {
   await ensureDirs()
@@ -83,7 +158,7 @@ export async function downloadMedia(originUrl: string, log: (s: string) => void 
     const file = `${hash}.${ext}`
     const path = join(MEDIA_DIR, file)
     if (!existsSync(path)) await writeFile(path, bytes)
-    m[originUrl] = { file, bytes: bytes.length }
+    m[originUrl] = { file, bytes: bytes.length, ...(await mediaDimensions(path, ext)) }
     await putMediaObject(originUrl, m[originUrl])
     return `/api/v1/media/${file}`
   } catch (err) {
@@ -121,6 +196,33 @@ export async function initMedia(): Promise<void> {
 export function mediaFilePath(file: string): string | null {
   if (!/^[a-f0-9]{64}\.[a-z0-9]+$/.test(file)) return null
   return join(MEDIA_DIR, file)
+}
+
+export function mediaVariantName(v: string): MediaVariantName | null {
+  return v in MEDIA_VARIANTS ? (v as MediaVariantName) : null
+}
+
+export async function mediaVariantPath(file: string, variant: MediaVariantName): Promise<string | null> {
+  const original = mediaFilePath(file)
+  if (!original || !existsSync(original)) return null
+  const ext = file.split('.').pop()?.toLowerCase()
+  if (!ext || !RASTER_VARIANT_EXTS.has(ext)) return null
+  const [hash] = file.split('.')
+  const outDir = join(MEDIA_VARIANTS_DIR, hash)
+  const outPath = join(outDir, `${variant}.webp`)
+  if (existsSync(outPath)) return outPath
+  await mkdir(outDir, { recursive: true })
+  const spec = MEDIA_VARIANTS[variant]
+  let pipeline = sharp(original, { animated: false }).rotate().resize({ width: spec.width, withoutEnlargement: true })
+  if ('blur' in spec) pipeline = pipeline.blur(spec.blur)
+  await pipeline.webp({ quality: spec.quality, effort: 4 }).toFile(outPath)
+  return outPath
+}
+
+async function mediaDimensions(path: string, ext: string): Promise<Pick<ManifestEntry, 'width' | 'height'>> {
+  if (!RASTER_VARIANT_EXTS.has(ext.toLowerCase())) return {}
+  const meta = await sharp(path, { animated: false }).metadata()
+  return { width: meta.width, height: meta.height }
 }
 
 /** 流式代理一个媒体 URL（视频播放用）：透传 Range，直连失败走代理。

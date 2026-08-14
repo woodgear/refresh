@@ -3,6 +3,8 @@ import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'
 import { Heart, MessageCircle, Repeat2, Eye, ArrowUp, Clock, Repeat, ExternalLink, Circle, CheckCircle2 } from 'lucide-react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { ProgressiveImage } from '@/components/ProgressiveImage'
+import { recordPerfSample } from '@/observability'
 
 function formatNumber(n: number): string {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`
@@ -76,6 +78,10 @@ function previewForMedia(message: Message, media: MediaRef, preferEmbed: boolean
   return { kind: 'media', media }
 }
 
+function mediaSrc(media: MediaRef): string {
+  return media.url ?? media.originUrl
+}
+
 function SourceChips({ sources, className }: { sources: string[]; className?: string }) {
   if (sources.length === 0) return null
   return (
@@ -103,6 +109,8 @@ function StatItem({ icon, value }: { icon: ReactNode; value: number | string }) 
 
 interface MessageCardProps {
   message: Message
+  /** 首屏候选卡片的第一张内容图优先加载 */
+  priority?: boolean
   /** 卡片在视口中停留足够久（自动已读用） */
   onSeen?: (name: string) => void
   onToggleRead?: (name: string, read: boolean) => void
@@ -110,7 +118,7 @@ interface MessageCardProps {
   layout?: 'list' | 'grid'
 }
 
-export function MessageCard({ message, onSeen, onToggleRead, layout = 'list' }: MessageCardProps) {
+export function MessageCard({ message, priority = false, onSeen, onToggleRead, layout = 'list' }: MessageCardProps) {
   const { spec, metadata } = message
   const platform = metadata.labels?.platform
   const read = !!message.status.read
@@ -123,6 +131,7 @@ export function MessageCard({ message, onSeen, onToggleRead, layout = 'list' }: 
   // 视口自动已读：卡片 50% 可见持续 1.5s 触发一次
   useEffect(() => {
     if (!onSeen || read || seenFired.current || !rootRef.current) return
+    const setupStartedAt = performance.now()
     let timer: number | null = null
     const observer = new IntersectionObserver(
       entries => {
@@ -142,6 +151,7 @@ export function MessageCard({ message, onSeen, onToggleRead, layout = 'list' }: 
       { threshold: 0.5 },
     )
     observer.observe(rootRef.current)
+    recordPerfSample('message_card.auto_read_observer_setup', performance.now() - setupStartedAt, { layout })
     return () => {
       if (timer !== null) window.clearTimeout(timer)
       observer.disconnect()
@@ -159,17 +169,28 @@ export function MessageCard({ message, onSeen, onToggleRead, layout = 'list' }: 
   return (
     <Card
       ref={rootRef}
+      data-message-card={metadata.name}
       className={cn(
         'overflow-hidden rounded-md border bg-card/95 shadow-none transition-colors hover:border-foreground/20 hover:bg-background',
         read ? 'border-border/70' : 'border-foreground/25 bg-background',
-        isGrid && 'mb-4 break-inside-avoid',
+        isGrid && 'h-full',
         isBilibiliDynamic && 'bg-muted/20',
       )}
     >
       <div className={cn('h-px', read ? 'bg-transparent' : 'bg-foreground/45')} />
       {isGrid && cover && (
         <button onClick={() => setPreview(previewForMedia(message, cover, true))} className="relative block w-full" title="点击预览">
-          <img src={cover.url ?? cover.originUrl} alt="" loading="lazy" className="w-full aspect-video object-cover" />
+          <ProgressiveImage
+            src={mediaSrc(cover)}
+            alt=""
+            presentation={cover.presentation}
+            className="w-full"
+            fallbackAspectRatio="16 / 9"
+            sizes="(min-width: 1024px) 320px, (min-width: 768px) 50vw, 100vw"
+            loading={priority ? 'eager' : 'lazy'}
+            fetchPriority={priority ? 'high' : 'auto'}
+            perfTarget="message.grid_cover"
+          />
           {durationLabel && (
             <span className="absolute bottom-2 right-2 rounded-sm bg-black/75 px-1.5 py-0.5 text-[11px] font-medium leading-4 text-white shadow-sm">
               {durationLabel}
@@ -189,7 +210,15 @@ export function MessageCard({ message, onSeen, onToggleRead, layout = 'list' }: 
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
             {author?.avatar ? (
-              <img src={author.avatar} alt="" className="h-8 w-8 shrink-0 rounded-md object-cover" />
+              <ProgressiveImage
+                src={author.avatar}
+                alt=""
+                presentation={author.avatarPresentation}
+                className="h-8 w-8 shrink-0 rounded-md"
+                sizes="32px"
+                fallbackAspectRatio="1 / 1"
+                perfTarget="message.author_avatar"
+              />
             ) : (
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-medium">
                 {(author?.name ?? author?.handle ?? '?').slice(0, 2)}
@@ -275,11 +304,16 @@ export function MessageCard({ message, onSeen, onToggleRead, layout = 'list' }: 
                 className="relative"
                 title="点击预览"
               >
-                <img
-                  src={m.url ?? m.originUrl}
+                <ProgressiveImage
+                  src={mediaSrc(m)}
                   alt=""
-                  loading="lazy"
-                  className={cn('rounded-md border object-cover', isGrid ? 'h-16' : 'h-32')}
+                  presentation={m.presentation}
+                  className={cn('rounded-md border', isGrid ? 'h-16' : 'h-32')}
+                  sizes={isGrid ? '96px' : '(min-width: 768px) 240px, 45vw'}
+                  fallbackAspectRatio={m.width && m.height ? `${m.width} / ${m.height}` : '16 / 9'}
+                  loading={priority && i === 0 ? 'eager' : 'lazy'}
+                  fetchPriority={priority && i === 0 ? 'high' : 'auto'}
+                  perfTarget={isGrid ? 'message.grid_inline_media' : 'message.list_media'}
                 />
                 {m.type === 'video' && (
                   <span className="absolute inset-0 flex items-center justify-center text-white text-2xl bg-black/30 rounded-md">

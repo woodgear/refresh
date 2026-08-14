@@ -16,7 +16,9 @@ import {
 import { Loader2, ChevronLeft, CheckCheck, List, LayoutGrid } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useRef } from 'react'
+import { Profiler, useEffect, useRef } from 'react'
+import { reportPerfEvent } from '@/observability'
+import { VirtualizedFeed } from '@/components/VirtualizedFeed'
 
 export const Route = createFileRoute('/')({
   component: HomePage,
@@ -59,14 +61,17 @@ function FeedPage() {
   const unread = useUnreadCounts()
   const { toggleRead, batchRead } = useReadActions()
   const qc = useQueryClient()
+  const dataReadyAt = useRef(0)
 
   // 视口自动已读：攒批，每 3 秒上报一次
   const pending = useRef(new Set<string>())
   useEffect(() => {
     const timer = window.setInterval(() => {
       if (pending.current.size === 0) return
+      const startedAt = performance.now()
       const names = [...pending.current]
       pending.current.clear()
+      reportPerfEvent('feed.auto_read_flush', performance.now() - startedAt, { item_count: names.length })
       batchRead(names)
     }, 3000)
     return () => window.clearInterval(timer)
@@ -82,6 +87,53 @@ function FeedPage() {
   const unreadCount = activeSource === 'all' ? unread.data?.total : unread.data?.sources?.[activeSource]
 
   const items = messages.data ?? []
+  const mediaCount = items.reduce((sum, item) => sum + item.spec.media.length, 0)
+
+  useEffect(() => {
+    if (!messages.data) return
+    dataReadyAt.current = performance.now()
+    reportPerfEvent('feed.messages_data_ready', undefined, {
+      active_source: activeSource,
+      sort_mode: sortMode,
+      unread_only: unreadOnly,
+      layout,
+      item_count: items.length,
+      media_count: mediaCount,
+    })
+    const first = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        reportPerfEvent('feed.data_to_next_paint', performance.now() - dataReadyAt.current, {
+          active_source: activeSource,
+          layout,
+          item_count: items.length,
+          media_count: mediaCount,
+        })
+      })
+    })
+    return () => window.cancelAnimationFrame(first)
+  }, [messages.dataUpdatedAt, activeSource, sortMode, unreadOnly, layout, items.length, mediaCount, messages.data])
+
+  const onFeedRender = (
+    id: string,
+    phase: 'mount' | 'update' | 'nested-update',
+    actualDuration: number,
+    baseDuration: number,
+    startTime: number,
+    commitTime: number,
+  ) => {
+    reportPerfEvent('react.profiler', actualDuration, {
+      profiler_id: id,
+      phase,
+      base_duration_ms: baseDuration,
+      render_start_ms: startTime,
+      commit_time_ms: commitTime,
+      active_source: activeSource,
+      layout,
+      item_count: items.length,
+      media_count: mediaCount,
+    })
+  }
+
   return (
     <div className="flex h-full flex-col">
       <div className="border-b bg-background/95 px-3 py-2 text-xs text-muted-foreground md:px-5">
@@ -150,7 +202,7 @@ function FeedPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 py-4 md:px-6 lg:px-8">
+      <div className="min-h-0 flex-1">
         {messages.isLoading && (
           <div className="flex justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -159,28 +211,23 @@ function FeedPage() {
         {messages.error && (
           <p className="text-center text-destructive py-8">加载失败: {(messages.error as Error).message}</p>
         )}
-        <div
-          className={cn(
-            layout === 'grid'
-              ? 'mx-auto max-w-7xl columns-1 gap-4 md:columns-2 2xl:columns-3'
-              : 'mx-auto max-w-5xl space-y-3',
-          )}
-        >
-          {items.map(m => (
-            <MessageCard
-              key={m.metadata.name}
-              message={m}
+        {!messages.isLoading && !messages.error && items.length === 0 && (
+          <div className="px-3 py-4 md:px-6 lg:px-8">
+            <div className="mx-auto max-w-5xl rounded-md border border-dashed bg-background/60 py-10 text-center text-sm text-muted-foreground">
+              {unreadOnly ? '没有未读内容' : '暂无内容，点左下角刷新抓一轮'}
+            </div>
+          </div>
+        )}
+        {!messages.isLoading && !messages.error && items.length > 0 && (
+          <Profiler id="feed-list" onRender={onFeedRender}>
+            <VirtualizedFeed
+              items={items}
               layout={layout}
               onToggleRead={toggleRead}
               onSeen={autoRead ? name => batchRead([name]) : undefined}
             />
-          ))}
-          {!messages.isLoading && items.length === 0 && (
-            <div className="rounded-md border border-dashed bg-background/60 py-10 text-center text-sm text-muted-foreground">
-              {unreadOnly ? '没有未读内容' : '暂无内容，点左下角刷新抓一轮'}
-            </div>
-          )}
-        </div>
+          </Profiler>
+        )}
       </div>
     </div>
   )

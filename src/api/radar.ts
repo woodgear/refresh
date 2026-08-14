@@ -1,6 +1,7 @@
 // radar REST API 客户端 + react-query hooks（tRPC 已退役，docs/design.md §3）
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { reportPerfEvent } from '@/observability'
 
 // ---------- 资源类型（与 server 信封对应） ----------
 
@@ -18,13 +19,29 @@ export interface MediaRef {
   playUrl?: string
   width?: number
   height?: number
+  presentation?: MediaPresentation
+}
+
+export interface MediaVariantRef {
+  url: string
+  width: number
+  height?: number
+  bytes?: number
+  mime: 'image/webp'
+}
+
+export interface MediaPresentation {
+  width?: number
+  height?: number
+  placeholder?: MediaVariantRef
+  variants?: Record<string, MediaVariantRef>
 }
 
 export interface MessageSpec {
   title?: string
   text?: string
   url?: string
-  author?: { ref?: string | null; name?: string; handle?: string; avatar?: string | null }
+  author?: { ref?: string | null; name?: string; handle?: string; avatar?: string | null; avatarPresentation?: MediaPresentation }
   media: MediaRef[]
   durationSec?: number
   stats?: Record<string, number>
@@ -70,6 +87,7 @@ export interface Followee {
     handle: string | null
     displayName: string
     avatar: string | null
+    avatarPresentation?: MediaPresentation
     url: string
     description: string | null
     raw?: unknown
@@ -148,15 +166,64 @@ export const SOURCES: SourceInfo[] = [
 // ---------- fetch 封装 ----------
 
 async function getJson<T>(path: string): Promise<T> {
+  const startedAt = performance.now()
   const res = await fetch(path)
-  if (!res.ok) throw new Error(`${path}: ${res.status} ${await res.text().catch(() => '')}`)
-  return res.json() as Promise<T>
+  const textStartedAt = performance.now()
+  const text = await res.text()
+  const parseStartedAt = performance.now()
+  if (!res.ok) throw new Error(`${path}: ${res.status} ${text}`)
+  const parsed = JSON.parse(text) as T
+  reportApiTiming('GET', path, res.status, startedAt, textStartedAt, parseStartedAt, text, parsed)
+  return parsed
 }
 
 async function send<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const startedAt = performance.now()
   const res = await fetch(path, { method, body: body === undefined ? undefined : JSON.stringify(body) })
-  if (!res.ok) throw new Error(`${method} ${path}: ${res.status} ${await res.text().catch(() => '')}`)
-  return res.json() as Promise<T>
+  const textStartedAt = performance.now()
+  const text = await res.text()
+  const parseStartedAt = performance.now()
+  if (!res.ok) throw new Error(`${method} ${path}: ${res.status} ${text}`)
+  const parsed = JSON.parse(text) as T
+  reportApiTiming(method, path, res.status, startedAt, textStartedAt, parseStartedAt, text, parsed)
+  return parsed
+}
+
+function reportApiTiming<T>(
+  method: string,
+  path: string,
+  status: number,
+  startedAt: number,
+  textStartedAt: number,
+  parseStartedAt: number,
+  text: string,
+  parsed: T,
+): void {
+  reportPerfEvent('api.fetch', performance.now() - startedAt, {
+    method,
+    api_path: normalizeApiPath(path),
+    status,
+    response_read_ms: parseStartedAt - textStartedAt,
+    parse_ms: performance.now() - parseStartedAt,
+    payload_bytes: new Blob([text]).size,
+    item_count: apiItemCount(parsed),
+  })
+}
+
+function apiItemCount(value: unknown): number | undefined {
+  if (!value || typeof value !== 'object' || !('items' in value)) return undefined
+  const items = (value as { items?: unknown }).items
+  return Array.isArray(items) ? items.length : undefined
+}
+
+function normalizeApiPath(path: string): string {
+  const [pathname] = path.split('?')
+  return pathname
+    .replace(/\/api\/v1\/messages\/[^/?]+/g, '/api/v1/messages/:name')
+    .replace(/\/api\/v1\/authors\/[^/?]+/g, '/api/v1/authors/:name')
+    .replace(/\/api\/v1\/followees\/[^/?]+/g, '/api/v1/followees/:name')
+    .replace(/\/api\/v1\/refreshwindows\/[^/?]+/g, '/api/v1/refreshwindows/:name')
+    .replace(/\/api\/v1\/followeewindows\/[^/?]+/g, '/api/v1/followeewindows/:name')
 }
 
 // ---------- hooks ----------

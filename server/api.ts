@@ -21,9 +21,9 @@ import {
 } from './followees'
 import { createRefreshWindow, getRunningWindow, runningWindowResources, watchWindow } from './refresh'
 import { patchOverlay, patchOverlayMany, type OverlayEntry } from './store'
-import { mediaFilePath, MIME_BY_EXT, isAllowedMediaHost, proxyMediaFetch } from './media'
+import { mediaFilePath, mediaVariantName, mediaVariantPath, MIME_BY_EXT, isAllowedMediaHost, proxyMediaFetch } from './media'
 import { readFile } from 'fs/promises'
-import { observabilitySummary, recordRum } from './observability'
+import { observabilitySummary } from './observability'
 
 export const apiV1 = new Hono()
 
@@ -288,37 +288,7 @@ apiV1.get('/logs', async c => {
   return c.json({ apiVersion: 'radar/v1', kind: 'LogTail', dates, date: tail.date, lines: tail.lines })
 })
 
-// ---------- observability ----------
-
-apiV1.post('/rum', async c => {
-  let body: { samples?: { name?: unknown; value?: unknown; at?: unknown; attrs?: unknown }[] } = {}
-  try {
-    body = (await c.req.json()) as typeof body
-  } catch {
-    return c.json({ error: 'invalid JSON body' }, 400)
-  }
-  if (!Array.isArray(body.samples)) return c.json({ error: 'samples required' }, 400)
-  recordRum(
-    body.samples.map(sample => ({
-      name: String(sample.name ?? 'unknown'),
-      value: typeof sample.value === 'number' ? sample.value : Number(sample.value ?? 0),
-      at: typeof sample.at === 'string' ? sample.at : new Date().toISOString(),
-      attrs: sanitizeRumAttrs(sample.attrs),
-    })),
-  )
-  return c.json({ accepted: body.samples.length })
-})
-
 apiV1.get('/observability', c => c.json(observabilitySummary()))
-
-function sanitizeRumAttrs(value: unknown): Record<string, string | number | boolean> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-  const out: Record<string, string | number | boolean> = {}
-  for (const [key, item] of Object.entries(value)) {
-    if (['string', 'number', 'boolean'].includes(typeof item)) out[key] = item as string | number | boolean
-  }
-  return out
-}
 
 // ---------- media ----------
 
@@ -338,6 +308,20 @@ apiV1.get('/media/:file', async c => {
   } catch {
     return c.json({ error: 'not found' }, 404)
   }
+})
+
+apiV1.get('/media-variants/:variant/:file', async c => {
+  const variant = mediaVariantName(c.req.param('variant'))
+  if (!variant) return c.json({ error: 'invalid media variant' }, 400)
+  const path = await mediaVariantPath(c.req.param('file'), variant)
+  if (!path) return c.json({ error: 'not found' }, 404)
+  const bytes = await readFile(path)
+  return new Response(new Uint8Array(bytes), {
+    headers: {
+      'Content-Type': 'image/webp',
+      'Cache-Control': 'public, max-age=31536000, immutable',
+    },
+  })
 })
 
 // 视频等大媒体不落盘，流式代理（透传 Range 支持拖进度条）；域名白名单防开放代理

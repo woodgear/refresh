@@ -20,6 +20,13 @@ import {
 
 type Json = Record<string, unknown> | unknown[]
 
+export interface MediaManifestEntry {
+  file: string
+  bytes: number
+  width?: number
+  height?: number
+}
+
 interface ResourceRow {
   api_version: string
   kind: string
@@ -427,19 +434,21 @@ export async function writeSchedulerSpecToStore(spec: Record<string, unknown>): 
   })
 }
 
-export async function readMediaManifestFromStore(): Promise<Record<string, { file: string; bytes: number }>> {
-  const out: Record<string, { file: string; bytes: number }> = {}
+export async function readMediaManifestFromStore(): Promise<Record<string, MediaManifestEntry>> {
+  const out: Record<string, MediaManifestEntry> = {}
   for (const resource of await listResources(MediaObjectResource)) {
     const spec = resource.spec as Record<string, unknown>
     const originUrl = String(spec.originUrl ?? '')
     const file = String(spec.file ?? '')
     const bytes = Number(spec.bytes ?? 0)
-    if (originUrl && file) out[originUrl] = { file, bytes }
+    const width = typeof spec.width === 'number' ? spec.width : undefined
+    const height = typeof spec.height === 'number' ? spec.height : undefined
+    if (originUrl && file) out[originUrl] = { file, bytes, width, height }
   }
   return out
 }
 
-export async function putMediaObject(originUrl: string, entry: { file: string; bytes: number }): Promise<void> {
+export async function putMediaObject(originUrl: string, entry: MediaManifestEntry): Promise<void> {
   await enqueueWrite(() => putMediaObjectSync(database(), originUrl, entry))
 }
 
@@ -529,7 +538,7 @@ function readOverlaySync(kind: OverlayKind): Record<string, OverlayEntry> {
   return out
 }
 
-function putMediaObjectSync(d: Database, originUrl: string, entry: { file: string; bytes: number }): void {
+function putMediaObjectSync(d: Database, originUrl: string, entry: MediaManifestEntry): void {
   const [hash, ext = 'bin'] = entry.file.split('.')
   putResourceSync(d, {
     apiVersion: API_VERSION,
@@ -545,6 +554,8 @@ function putMediaObjectSync(d: Database, originUrl: string, entry: { file: strin
       hash,
       ext,
       bytes: entry.bytes,
+      ...(entry.width !== undefined ? { width: entry.width } : {}),
+      ...(entry.height !== undefined ? { height: entry.height } : {}),
       storage: { type: 'file', path: `media/${entry.file}` },
     },
     status: { phase: 'Available' },
