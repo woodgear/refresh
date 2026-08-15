@@ -5,7 +5,7 @@
 import { getSource } from './config'
 import { defaultFetcher, type Fetcher } from './fetcher'
 import { downloadAll } from './media'
-import { normalizeItem, expandRawItems } from './normalize'
+import { collectMediaUrls, collectMessageRefs } from './page-content'
 import { ingestWindow, getWindowResource, registerWindowResource } from './resources'
 import { appendWindow, type Resource, type WindowFile } from './store'
 import { rlog } from './logger'
@@ -107,7 +107,7 @@ async function executeWindow(run: RunningWindow, platform: string, count: number
       const indexed = getWindowResource(name)
       if (indexed) {
         status.stats = (indexed.status as Record<string, unknown>).stats
-        status.messageRefs = collectRefs(win)
+        status.messageRefs = collectMessageRefs(platform, win.rawItems)
         ;(indexed.status as Record<string, unknown>).messageRefs = status.messageRefs
       }
       log(`ingested: ${newCount} new, ${dupCount} duplicate`)
@@ -124,36 +124,6 @@ async function executeWindow(run: RunningWindow, platform: string, count: number
   emit(run, { type: 'done', data: JSON.stringify({ phase: status.phase, stats: status.stats ?? null, error: status.error ?? null }) })
   rlog(name, `done: ${status.phase}${status.error ? ` (${status.error})` : ''}`)
   running.delete(name)
-}
-
-function collectMediaUrls(platform: string, rawItems: unknown[]): string[] {
-  const urls: string[] = []
-  for (const raw of expandRawItems(platform, rawItems)) {
-    const n = normalizeItem(platform, raw)
-    if (!n) continue
-    for (const m of n.message.spec.media) urls.push(m.originUrl)
-    const avatar = n.message.spec.author?.avatar
-    if (avatar && !avatar.startsWith('/')) urls.push(avatar)
-    // 正文 HTML 内嵌图（知乎全文）一并本地化
-    const content = n.message.spec.content
-    if (content) {
-      for (const m of content.matchAll(/<img[^>]+src="([^"]+)"/g)) {
-        if (m[1].startsWith('http')) urls.push(m[1])
-      }
-    }
-  }
-  return urls
-}
-
-function collectRefs(win: WindowFile): string[] {
-  // messageRefs 从 rawItems 派生：与 normalize 同源的命名规则
-  const platform = String(win.metadata.labels?.platform ?? '')
-  const refs: string[] = []
-  for (const raw of win.rawItems) {
-    const id = (raw as Record<string, unknown>)?.id
-    if (id !== undefined && id !== null && id !== '') refs.push(`${platform}-${id}`)
-  }
-  return refs
 }
 
 /** 运行中的 window 资源（GET refreshwindows 时与落盘档案合并展示） */

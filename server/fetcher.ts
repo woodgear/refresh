@@ -24,6 +24,8 @@ export interface ContinuationFetcher {
   fetchNext(source: SourceConfig, cursor: string, count: number, log: (line: string) => void): Promise<FetchPageResult>
 }
 
+export class ContinuationUnsupportedError extends Error {}
+
 export interface MockPage {
   inputCursor: string | null
   rawItems: unknown[]
@@ -147,6 +149,83 @@ export class MockFetcher implements Fetcher {
   }
 }
 
+class MockApiContinuationFetcher implements ContinuationFetcher {
+  private readonly base = new MockFetcher()
+
+  async fetchHead(source: SourceConfig, count: number, log: (line: string) => void): Promise<FetchPageResult> {
+    const result = await this.base.fetch(source, count, log)
+    return {
+      ...result,
+      nextCursor: `mock:${source.name}:page-2`,
+      hasMore: true,
+    }
+  }
+
+  async fetchNext(
+    source: SourceConfig,
+    cursor: string,
+    count: number,
+    log: (line: string) => void,
+  ): Promise<FetchPageResult> {
+    const expected = `mock:${source.name}:page-2`
+    if (cursor !== expected) throw new Error(`mock continuation page not found: ${source.name} cursor=${cursor}`)
+    log(`mock continuation ${source.name} cursor=${cursor} count=${count}`)
+    return {
+      rawItems: mockSecondPage(source).slice(0, count),
+      nextCursor: null,
+      hasMore: false,
+      fetchedAt: 1781113600,
+    }
+  }
+}
+
+class UnsupportedContinuationFetcher implements ContinuationFetcher {
+  async fetchHead(source: SourceConfig): Promise<FetchPageResult> {
+    throw new ContinuationUnsupportedError(`continuation is not implemented for source: ${source.name}`)
+  }
+
+  async fetchNext(source: SourceConfig): Promise<FetchPageResult> {
+    throw new ContinuationUnsupportedError(`continuation is not implemented for source: ${source.name}`)
+  }
+}
+
+function mockSecondPage(source: SourceConfig): unknown[] {
+  if (source.platform === 'twitter') {
+    return [{
+      id: '9101',
+      text: 'mock tweet continuation',
+      author: 'mockuser',
+      created_at: '2026-06-10T03:00:00.000Z',
+      url: 'https://x.com/mockuser/status/9101',
+    }]
+  }
+  if (source.platform === 'bilibili') {
+    return [{
+      bvid: 'BVmock0002',
+      title: 'mock bili continuation',
+      desc: 'mock bili continuation desc',
+      duration: 60,
+      pubdate: 1781113600,
+      owner: { mid: 42, name: '测试UP' },
+      stat: { view: 10, like: 1, danmaku: 0 },
+    }]
+  }
+  return [{
+    id: '8101',
+    title: 'mock zhihu continuation',
+    excerpt: 'mock continuation excerpt',
+    created_time: 1781113600,
+    url: 'https://www.zhihu.com/question/1/answer/8101',
+    author: { name: '测试作者', url: 'https://www.zhihu.com/people/mock-author' },
+  }]
+}
+
 export function defaultFetcher(): Fetcher {
   return process.env.RADAR_FETCHER === 'mock' ? new MockFetcher() : new CdpFetcher()
+}
+
+export function defaultContinuationFetcher(): ContinuationFetcher {
+  return process.env.RADAR_FETCHER === 'mock'
+    ? new MockApiContinuationFetcher()
+    : new UnsupportedContinuationFetcher()
 }

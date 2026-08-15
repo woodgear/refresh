@@ -46,6 +46,8 @@ verify.sh 全绿（A1-A4, A6, A9）且 A5/A7/A8 均为 [A] awaiting-user → loo
 
 ## 迭代日志（续）
 
+- 2026-08-15 / FeedSession 单 source continuation / 在 litectl V2 ResourceStore 上新增 `FeedSession` + 独立 Status、不可变 `FeedPage`，由声明式 reference 自动物化 `page-of` / `page-window` link。新增 restart/page/messages API，平台 cursor 不出 HTTP；fetch/archive 失败不推进状态，跨页去重但保留完整 page membership，同 session 并发请求明确拒绝。mock 纵切跨进程重启后继续成功，真实平台 adapter 暂明确返回 501。受限 verify `PASS=118 FAIL=0`，CPU 3.524s、峰值 210.3MiB。
+
 - 2026-08-15 / litectl V2 ResourceStore / 用 litectl V2 替换 750 行自研 SQLite runtime，public PascalCase kind 与 inline status 保持不变，facade 在单事务内拆装 lower-case subject + 独立业务 Status，并物化 window item/overlay link。旧 `refresh.db` 首次启动自动全量转换、逐资源对账、保留备份后原子替换。真实 61,466 资源副本迁移为 92,408 个 V2 资源，单核 36.6s、峰值 1.7GiB，integrity check 与真实数据短启动通过；发现并在 litectl 底层修复浮点 round-trip 导致的 raw 漂移。verify 105 断言全绿，真实数据库未切换。
 
 - 2026-07-14 / 首页虚拟列表 / 首三张卡片的第一张内容图改为 `eager/high`，其余图片保持 `lazy/auto`；列表模式接入 `react-virtuoso@4.18.10`，由成熟库处理动态卡片高度、图片加载后的重测量和滚动窗口，grid 瀑布流保持原实现。线上探针仍取 200 条消息，但桌面/移动端只挂载 2-4 张卡片；OpenObserve 精确 probe 对比中，reload data-to-next-paint 从 361.1ms 降到 19.5ms，LCP 从 536ms 降到 240ms，105 项 verify 全绿。

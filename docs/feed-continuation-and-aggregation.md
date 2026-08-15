@@ -1,6 +1,6 @@
 # 连续获取与跨平台聚合 Feed
 
-> 状态：产品与架构交接稿，2026-08-10。2026-08-14 开始落地第 1 步：先用确定性分页 mock 固定 restart/continue、cursor 和失败重试契约；文中其余“目标架构”尚未实现。
+> 状态：产品与架构交接稿，2026-08-10。2026-08-15 已完成确定性 fetcher 契约，以及基于 litectl V2 的单 source FeedSession/FeedPage 持久化与 API 纵切；真实平台 cursor、聚合、updates 和 UI 尚未实现。
 
 ## 1. 产品目标
 
@@ -55,14 +55,18 @@ Refresh 最终不是单个平台的阅读器，而是所有个人信息流的统
 
 ## 4. 当前代码实际具备什么
 
-现有架构已经有适合扩展的地基：
+现有架构已经完成以下 continuation 地基：
 
-- 所有平台抓取都通过 `POST /api/v1/refreshwindows` 创建不可变 `RefreshWindow`。
+- `POST /api/v1/feedsessions` 创建 generation 和第一页；`POST /feedsessions/{name}/pages` 从已提交 cursor 继续。
+- `FeedSession` 保存已发布顺序与 cursor，`FeedPage` 保存不可变 page 审计记录并强关联 session/window。
+- 每页都归档为不可变 `RefreshWindow`，Message 继续全局去重。
+- session/page 的最终状态转换在一个 litectl 调用方事务内提交；fetch 或 archive 失败不推进 cursor。
+- 服务重启后能恢复 session 并继续；同一 session 的并发 page 请求明确返回冲突。
+- 平台 cursor 只保存在内部资源表示，FeedSession、FeedPage HTTP 响应均不返回 cursor。
 - source 已按 `account × capability` 注册。
-- Message 全局去重，window 保留该次抓取的原始 payload。
 - 知乎 fetcher 会跟随 `paging.next`；B 站关注流会跟随 `offset`；B 站热门使用页码；Twitter 会滚动页面触发更多 GraphQL 响应。
 
-但这些分页目前只发生在**单次抓取内部**：每次新的 RefreshWindow 都从 feed 头部开始，平台 continuation cursor 没有跨 window 保存。因此调大 `count` 只是“一次从头多抓一些”，并不等于产品上的“获取更多”。
+当前 API 纵切只接入确定性 mock continuation。真实平台 fetcher 的分页仍只发生在**单次抓取内部**，还没有把各自 cursor 接到 `ContinuationFetcher`；非 mock 环境调用 FeedSession API 会明确返回 `501`，不会静默从头抓取。
 
 另外：
 
@@ -91,7 +95,7 @@ window 档案除 raw items 和 `messageRefs` 外，还应记录：
 - 输出 cursor
 - `hasMore`
 
-平台 cursor 对外保持 opaque。客户端只能拿 Refresh 生成的 continuation token，不能依赖知乎、Twitter 或 B 站的原始 cursor 结构。
+平台 cursor 对外保持 opaque。当前客户端只按 FeedSession 名请求下一页，完全不接收平台 cursor；后续即使增加 continuation token，也不能让客户端依赖知乎、Twitter 或 B 站的原始 cursor 结构。
 
 ### 5.2 增加 FeedSession
 
@@ -188,9 +192,9 @@ fetchNext(source, cursor, count): Promise<FetchPageResult>
 
 ## 8. 建议实施顺序
 
-1. 用确定性 mock fetcher 定义 `restart/continue`、cursor 提交和失败重试测试。
-2. 增加 FeedSession 与 page API，保留 RefreshWindow 作为底层 Job。
-3. 先让单一 source 的获取更多端到端成立。
+1. [x] 用确定性 mock fetcher 定义 `restart/continue`、cursor 提交和失败重试测试。
+2. [x] 增加 FeedSession 与 page API，保留 RefreshWindow 作为底层 Job。
+3. [x] 让单一 mock source 的获取更多端到端成立，包括跨进程重启续取。
 4. 为知乎、B 站关注、Twitter 补齐可持久化 cursor。
 5. 通过真实网络确认并接入 B 站个性化推荐 source。
 6. 将 mockup 的本地切片替换为 page API，并将新内容提示接到真实 updates 状态。

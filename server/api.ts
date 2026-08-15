@@ -20,6 +20,18 @@ import {
   listFolloweeWindowResources,
 } from './followees'
 import { createRefreshWindow, getRunningWindow, runningWindowResources, watchWindow } from './refresh'
+import { getSource } from './config'
+import { ContinuationUnsupportedError } from './fetcher'
+import {
+  defaultFeedSessionService,
+  FeedPageFetchError,
+  FeedSessionConflictError,
+  FeedSessionExhaustedError,
+  FeedSessionInputError,
+  FeedSessionNotFoundError,
+  publicFeedPage,
+  publicFeedSession,
+} from './feed-sessions'
 import { patchOverlay, patchOverlayMany, type OverlayEntry } from './store'
 import { mediaFilePath, mediaVariantName, mediaVariantPath, MIME_BY_EXT, isAllowedMediaHost, proxyMediaFetch } from './media'
 import { readFile } from 'fs/promises'
@@ -34,6 +46,15 @@ function list(kind: string, items: unknown[]) {
 function intParam(v: string | undefined): number | undefined {
   const n = parseInt(v ?? '', 10)
   return Number.isFinite(n) ? n : undefined
+}
+
+function feedSessionErrorStatus(error: unknown): 400 | 404 | 409 | 500 | 501 | 502 {
+  if (error instanceof FeedSessionInputError) return 400
+  if (error instanceof FeedSessionNotFoundError) return 404
+  if (error instanceof FeedSessionConflictError || error instanceof FeedSessionExhaustedError) return 409
+  if (error instanceof ContinuationUnsupportedError) return 501
+  if (error instanceof FeedPageFetchError) return 502
+  return 500
 }
 
 // ---------- messages ----------
@@ -413,5 +434,77 @@ apiV1.post('/refreshwindows', async c => {
     return c.json(resource, 202)
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+  }
+})
+
+// ---------- feedsessions ----------
+
+apiV1.get('/feedsessions', async c => {
+  try {
+    const sessions = await defaultFeedSessionService().list()
+    return c.json(list('FeedSession', sessions.map(publicFeedSession)))
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, feedSessionErrorStatus(err))
+  }
+})
+
+apiV1.post('/feedsessions', async c => {
+  let body: Record<string, unknown>
+  try {
+    body = (await c.req.json()) as Record<string, unknown>
+  } catch {
+    return c.json({ error: 'invalid JSON body' }, 400)
+  }
+  const spec = (body.spec ?? body) as Record<string, unknown>
+  const sourceName = String(spec.source ?? '')
+  const source = getSource(sourceName)
+  if (!source) return c.json({ error: `unknown source: ${sourceName}` }, 400)
+  const count = spec.count === undefined ? 20 : Number(spec.count)
+  try {
+    const result = await defaultFeedSessionService().restart(source, count)
+    return c.json({ session: publicFeedSession(result.session), page: publicFeedPage(result.page) }, 201)
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, feedSessionErrorStatus(err))
+  }
+})
+
+apiV1.get('/feedsessions/:name/messages', async c => {
+  try {
+    const session = await defaultFeedSessionService().get(c.req.param('name'))
+    const items = []
+    for (const name of session.status.orderedMessageRefs) {
+      const message = await getMessage(name)
+      if (!message) throw new Error(`FeedSession/${session.metadata.name} references missing Message/${name}`)
+      items.push(message)
+    }
+    return c.json(list('Message', items))
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, feedSessionErrorStatus(err))
+  }
+})
+
+apiV1.post('/feedsessions/:name/pages', async c => {
+  let body: Record<string, unknown> = {}
+  try {
+    const text = await c.req.text()
+    if (text.trim()) body = JSON.parse(text) as Record<string, unknown>
+  } catch {
+    return c.json({ error: 'invalid JSON body' }, 400)
+  }
+  const spec = (body.spec ?? body) as Record<string, unknown>
+  const count = spec.count === undefined ? 20 : Number(spec.count)
+  try {
+    const result = await defaultFeedSessionService().continue(c.req.param('name'), count)
+    return c.json({ session: publicFeedSession(result.session), page: publicFeedPage(result.page) }, 201)
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, feedSessionErrorStatus(err))
+  }
+})
+
+apiV1.get('/feedsessions/:name', async c => {
+  try {
+    return c.json(publicFeedSession(await defaultFeedSessionService().get(c.req.param('name'))))
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, feedSessionErrorStatus(err))
   }
 })

@@ -14,7 +14,7 @@
 pnpm install
 pnpm start        # 后端(bun, :3001) + 前端(vite, :5173)，均监听 0.0.0.0
 pnpm server       # 仅后端
-./verify.sh       # 验收冒烟（105 断言，全 mock 隔离环境，~25s）——改完必跑，全绿才算完
+./verify.sh       # 验收冒烟（118 断言，全 mock 隔离环境，~25s）——改完必跑，全绿才算完
 bunx tsc --noEmit # 类型检查（vite build 不做类型检查）
 ```
 
@@ -34,6 +34,8 @@ server/
   resources.ts    # 内存索引（Message/Author/Window）、labelSelector 查询、未读计数
   normalize.ts    # raw → spec（每平台一个 normalizer，新旧 schema 都容忍）
   refresh.ts      # RefreshWindow 执行器：统一抓取入口，Pending→Running→终态，watch 事件
+  feed-sessions.ts # 单 source generation/page 状态机、持久化 cursor 与 page archive
+  page-content.ts # raw page → 媒体 URL / Message ref 的纯派生 helper
   fetcher.ts      # CdpFetcher（按平台路由）+ MockFetcher（verify 用）
   cdp.ts          # CDP 最小客户端 + Chrome 自管（找可执行文件、独立 profile、自拉起）
   cdp-twitter.ts  # 拦截 HomeTimeline/HomeLatestTimeline GraphQL 响应
@@ -69,7 +71,7 @@ data/（gitignore）
    `radar/v1` 与 `radar/*` annotation 前缀是**内部标识符**，已落在历史档案里，改名需迁移，别轻动。
 2. **`spec.raw` 保真**：normalized 字段全部由 raw 派生。改 normalize 逻辑后重启即对全部历史数据生效（索引重建），不需要重抓。
 3. **档案不可变 / 用户态走 overlay**：RefreshWindow 与 item 资源只追加；已读、分类 label 等只写 `OverlayEntry`，PATCH 即时生效。overlay 通过 `overlay-for` 强引用目标，文件系统只保存媒体 blob。
-4. **统一抓取入口**：一切抓取 = `POST /refreshwindows`（手动/调度/登录后补抓只差 `spec.trigger`）。GET 永远秒回缓存。
+4. **统一抓取档案**：手动/调度/登录后补抓走 `POST /refreshwindows`；连续浏览走 `POST /feedsessions` 与 `/feedsessions/{name}/pages`。两条入口最终都产生不可变 `RefreshWindow`，GET 永远只读本地状态。
 5. **多源归属**：同一条内容被多个源推到时，归属是集合（`radar/sources` annotation），`source=` selector 按集合匹配。消息名带平台前缀全局唯一（`twitter-<id>` / `zhihu-<id>` / `bilibili-<bvid>`）。
 6. **登录态在自管 Chrome 的 profile 里**（`profiles/main`，gitignore）：抓取/检测/登录引导全走 CDP，零外部工具依赖。
 7. **媒体本地化**：图片下载到本地（`/api/v1/media/<hash>`），视频不下载（poster + `media-proxy` 流式代理播放）。直连失败自动走代理（`RADAR_PROXY`，默认 127.0.0.1:7890，Bun 不读系统代理）。
@@ -86,6 +88,8 @@ GET|PATCH /api/v1/authors/{name}
 GET   /api/v1/accounts[/{name}?check=1]  # check=1 现场检测登录态
 POST  /api/v1/loginsessions  GET /loginsessions/{id}[/qr]  POST /loginsessions/{id}/input
 POST  /api/v1/refreshwindows  GET /refreshwindows/{name}[?watch=1]   # watch=SSE
+POST  /api/v1/feedsessions  GET /feedsessions[/{name}]
+POST  /api/v1/feedsessions/{name}/pages  GET /feedsessions/{name}/messages
 GET|PATCH /api/v1/scheduler              # 单例：{spec:{enabled,intervalMs}}
 GET   /api/v1/logs?date=&lines=          # 日志 tail
 GET   /api/v1/media/{hash}  /api/v1/media-proxy?url=

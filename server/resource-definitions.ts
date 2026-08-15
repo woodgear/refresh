@@ -41,6 +41,47 @@ const windowItemSchema = (fieldPath: string) => ({
   'x-litectl-links': [{ fieldPath, relation: 'item-of' }],
 })
 
+const feedPageSchema = {
+  type: 'object',
+  required: [
+    'sessionRef',
+    'windowRef',
+    'ordinal',
+    'mode',
+    'inputCursor',
+    'outputCursor',
+    'hasMore',
+    'fetchedAt',
+    'messageRefs',
+  ],
+  properties: {
+    sessionRef: REFERENCE_SCHEMA,
+    windowRef: REFERENCE_SCHEMA,
+    ordinal: { type: 'integer', minimum: 0 },
+    mode: { enum: ['restart', 'continue'] },
+    inputCursor: { type: ['string', 'null'] },
+    outputCursor: { type: ['string', 'null'] },
+    hasMore: { type: 'boolean' },
+    fetchedAt: { type: 'number' },
+    messageRefs: { type: 'array', items: { type: 'string' } },
+  },
+  'x-litectl-links': [
+    { fieldPath: '/sessionRef', relation: 'page-of' },
+    { fieldPath: '/windowRef', relation: 'page-window' },
+  ],
+  additionalProperties: false,
+} as const
+
+const feedSessionSchema = {
+  type: 'object',
+  required: ['source', 'generation'],
+  properties: {
+    source: { type: 'string' },
+    generation: { type: 'string' },
+  },
+  additionalProperties: false,
+} as const
+
 export const MessageResource = defineResource('Message', 'message', { statusStorageKind: 'message-status' })
 export const AuthorResource = defineResource('Author', 'author', { statusStorageKind: 'author-status' })
 export const FolloweeResource = defineResource('Followee', 'followee', { statusStorageKind: 'followee-status' })
@@ -71,6 +112,13 @@ export const MediaObjectResource = defineResource('MediaObject', 'media-object',
 export const AccountStatusResource = defineResource('AccountStatus', 'account', {
   statusStorageKind: 'account-status',
 })
+export const FeedSessionResource = defineResource('FeedSession', 'feed-session', {
+  statusStorageKind: 'feed-session-status',
+  schema: feedSessionSchema,
+})
+export const FeedPageResource = defineResource('FeedPage', 'feed-page', {
+  schema: feedPageSchema,
+})
 
 export const ALL_RESOURCE_DEFINITIONS = [
   MessageResource,
@@ -84,6 +132,8 @@ export const ALL_RESOURCE_DEFINITIONS = [
   SchedulerResource,
   MediaObjectResource,
   AccountStatusResource,
+  FeedSessionResource,
+  FeedPageResource,
 ] as const
 
 export type ResourceKind = (typeof ALL_RESOURCE_DEFINITIONS)[number]['kind']

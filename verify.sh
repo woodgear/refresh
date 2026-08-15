@@ -218,6 +218,16 @@ curl -s "http://localhost:${PORT}/rss/all.xml" | xmllint --noout - 2>/dev/null &
 NAMES_COUNT=$(curl -s "$BASE/messages?names=zhihu-8001,twitter-9001,missing" | jq '.items | length')
 assert_eq "2" "$NAMES_COUNT" "messages?names= 批量查询"
 
+log "== FeedSession: restart page 持久化，cursor 不出 API =="
+FEED=$(curl -s -X POST "$BASE/feedsessions" -d '{"spec":{"source":"zhihu-main-recommend","count":20}}')
+FEED_NAME=$(echo "$FEED" | jq -r .session.metadata.name)
+FEED_CREATED=$(echo "$FEED" | jq -r .session.metadata.creationTimestamp)
+assert_eq "1" "$(echo "$FEED" | jq -r .session.status.pageCount)" "restart 创建第一页"
+assert_eq "false" "$(echo "$FEED" | jq -r '.session.status | has("nextCursor")')" "FeedSession API 隐藏平台 cursor"
+assert_eq "false" "$(echo "$FEED" | jq -r '.page.spec | has("inputCursor") or has("outputCursor")')" "FeedPage API 隐藏平台 cursor"
+assert_eq "3" "$(curl -s "$BASE/feedsessions/$FEED_NAME/messages" | jq '.items | length')" "第一页保持发布顺序"
+assert_eq "2" "$(sqlite3 "$TMPDIR/refresh.db" "select count(*) from resource_links where relation in ('page-of','page-window');")" "FeedPage 物化 session/window links"
+
 log "== A5(mock): 登录闭环（logged_out → LoginSession → Succeeded → 补抓） =="
 PORT2=$((PORT+1))
 BASE2="http://localhost:${PORT2}/api/v1"
@@ -285,6 +295,15 @@ assert_eq "6" "$(curl -s "$BASE/messages" | jq '.items | length')" "重启后 me
 assert_eq "test-cat" "$(curl -s "$BASE/authors/zhihu-mock-author" | jq -r .metadata.labels.category)" "重启后 overlay 保留"
 assert_eq "5" "$(curl -s "$BASE/followees" | jq '.items | length')" "重启后 followees 恢复"
 assert_eq "重点关注" "$(curl -s "$BASE/followees/zhihu-z1" | jq -r '.metadata.annotations["refresh/note"]')" "重启后 followee overlay 保留"
+assert_eq "1" "$(curl -s "$BASE/feedsessions/$FEED_NAME" | jq -r .status.pageCount)" "重启后 FeedSession 恢复"
+FEED_NEXT=$(curl -s -X POST "$BASE/feedsessions/$FEED_NAME/pages" -d '{}')
+assert_eq "2" "$(echo "$FEED_NEXT" | jq -r .session.status.pageCount)" "重启后从已提交 cursor 继续"
+assert_eq "$FEED_CREATED" "$(echo "$FEED_NEXT" | jq -r .session.metadata.creationTimestamp)" "continuation 保留 session 创建时间"
+assert_eq "false" "$(echo "$FEED_NEXT" | jq -r '.session.status | has("nextCursor")')" "continue 响应隐藏平台 cursor"
+assert_eq "4" "$(curl -s "$BASE/feedsessions/$FEED_NAME/messages" | jq '.items | length')" "第二页原位追加且跨页去重"
+assert_eq "7" "$(curl -s "$BASE/messages" | jq '.items | length')" "第二页新 Message 进入全局归档"
+assert_eq "409" "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/feedsessions/$FEED_NAME/pages" -d '{}')" "耗尽 session 明确拒绝继续"
+assert_eq "4" "$(sqlite3 "$TMPDIR/refresh.db" "select count(*) from resource_links where relation in ('page-of','page-window');")" "两页共四条强 link"
 
 log ""
 log "PASS=$PASS FAIL=$FAIL"

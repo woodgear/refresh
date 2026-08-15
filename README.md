@@ -12,6 +12,7 @@ Refresh 是一个自托管的个人账号 feed API：用你自己的浏览器登
   - 知乎 topstory / moments API
   - B 站动态流 / 热门 API
 - 每次抓取保存为不可变的 `RefreshWindow` 档案。
+- 提供持久化 `FeedSession` / `FeedPage` API；当前已完成 mock continuation 纵切，真实平台 cursor adapter 仍在实现中。
 - 将内容归一化为 `Message` / `Author` / `Account` 等 k8s 风格资源。
 - 提供 React 阅读界面：按源过滤、未读追踪、登录恢复、手动刷新。
 - 提供 RSS：`/rss/<source>.xml` 和 `/rss/all.xml`。
@@ -94,6 +95,17 @@ bunx tsc --noEmit
 ```
 
 `verify.sh` 使用隔离的 mock 数据，不依赖真实平台登录态。
+
+单 source continuation API：
+
+```text
+POST /api/v1/feedsessions
+GET  /api/v1/feedsessions/{name}
+GET  /api/v1/feedsessions/{name}/messages
+POST /api/v1/feedsessions/{name}/pages
+```
+
+客户端按 session 名继续，不接触平台原始 cursor。不支持 continuation 的真实 source 当前明确返回 `501`，不会退化成从头抓取。
 
 ## 部署
 

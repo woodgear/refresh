@@ -6,6 +6,8 @@ import {
   FolloweeResource,
   FolloweeWindowItemResource,
   FolloweeWindowResource,
+  FeedPageResource,
+  FeedSessionResource,
   MediaObjectResource,
   MessageResource,
   OverlayEntryResource,
@@ -144,6 +146,13 @@ function toStorageResource(
     delete labels.targetName
     labels.overlay_kind = overlayKind
     spec.targetRef = referenceTo(database, targetDefinition, targetName)
+  } else if (definition === FeedPageResource) {
+    const sessionName = stringField(spec, 'session', `${resource.kind}/${resource.metadata.name}.spec`)
+    const windowName = stringField(spec, 'window', `${resource.kind}/${resource.metadata.name}.spec`)
+    delete spec.session
+    delete spec.window
+    spec.sessionRef = referenceTo(database, FeedSessionResource, sessionName)
+    spec.windowRef = referenceTo(database, RefreshWindowResource, windowName)
   }
 
   return { spec, labels, annotations }
@@ -169,6 +178,13 @@ function fromStorageResource(definition: ResourceDefinition, row: ResourceRow): 
     labels.overlayKind = stringField(labels, 'overlay_kind', `OverlayEntry/${row.name}.labels`)
     labels.targetName = targetRef.name
     delete labels.overlay_kind
+  } else if (definition === FeedPageResource) {
+    const sessionRef = referenceField(spec, 'sessionRef', `FeedPage/${row.name}.spec`)
+    const windowRef = referenceField(spec, 'windowRef', `FeedPage/${row.name}.spec`)
+    delete spec.sessionRef
+    delete spec.windowRef
+    spec.session = sessionRef.name
+    spec.window = windowRef.name
   }
 
   let status: Record<string, unknown> = {}

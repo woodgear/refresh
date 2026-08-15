@@ -41,3 +41,9 @@ Current result: passed.
 ## Stop Evidence
 
 No stop condition was triggered. The raw-number drift was fixed in litectl itself; Refresh did not gain a tolerance or compatibility branch.
+
+## Continuation Follow-through
+
+- The first post-migration feature now uses `FeedSession` + independent Status and immutable `FeedPage` resources.
+- `page-of` and `page-window` links are declared in schemas and resolved by the facade; the FeedSession service contains no litectl branch, raw SQL, UID handling, or manual Status/link write.
+- This follow-through preserves the migration simplification result; no stop condition was triggered.

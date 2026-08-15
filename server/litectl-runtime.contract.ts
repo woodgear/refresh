@@ -19,6 +19,8 @@ import {
   MediaObjectResource,
   MessageResource,
   OverlayEntryResource,
+  FeedPageResource,
+  FeedSessionResource,
   RefreshWindowItemResource,
   RefreshWindowResource,
 } from './resource-definitions'
@@ -231,6 +233,104 @@ describe('Refresh resource facade contract', () => {
       .all()
     expect(links.map(link => link.relation)).toEqual(['item-of', 'overlay-for'])
     expect(getRefreshResource(database, RefreshWindowResource, window.metadata.name)).toEqual(window)
+  })
+
+  test('feed page commit preserves public resources and materializes session and window links', () => {
+    const window = {
+      apiVersion: 'radar/v1' as const,
+      kind: 'RefreshWindow',
+      metadata: { name: 'feed-window-1' },
+      spec: { source: 'twitter-main-following', count: 2 },
+      status: { phase: 'Succeeded' },
+    }
+    const session = {
+      apiVersion: 'radar/v1' as const,
+      kind: 'FeedSession',
+      metadata: { name: 'feed-1', labels: { source: 'twitter-main-following' } },
+      spec: { source: 'twitter-main-following', generation: 'generation-1' },
+      status: {
+        nextCursor: 'cursor-1',
+        hasMore: true,
+        orderedMessageRefs: ['twitter-2'],
+        pageCount: 1,
+        lastPage: 'feed-1-000000',
+        lastWindow: 'feed-window-1',
+      },
+    }
+    const page = {
+      apiVersion: 'radar/v1' as const,
+      kind: 'FeedPage',
+      metadata: { name: 'feed-1-000000' },
+      spec: {
+        session: 'feed-1',
+        window: 'feed-window-1',
+        ordinal: 0,
+        mode: 'restart',
+        inputCursor: null,
+        outputCursor: 'cursor-1',
+        hasMore: true,
+        fetchedAt: 1,
+        messageRefs: ['twitter-2'],
+      },
+      status: {},
+    }
+
+    litectlWriteTransaction(database, () => {
+      putRefreshResource(database, window)
+      putRefreshResource(database, session)
+      putRefreshResource(database, page)
+    })
+
+    expect(getRefreshResource(database, FeedSessionResource, session.metadata.name)).toEqual(session)
+    expect(getRefreshResource(database, FeedPageResource, page.metadata.name)).toEqual(page)
+    const links = database.query<{ relation: string }, []>(
+      `SELECT link.relation
+         FROM resource_links link
+         JOIN resources page ON page.id = link.from_id
+        WHERE page.kind = 'feed-page'
+          AND page.name = 'feed-1-000000'
+        ORDER BY link.relation`,
+    ).all()
+    expect(links.map(link => link.relation)).toEqual(['page-of', 'page-window'])
+  })
+
+  test('feed session and page roll back together when their caller transaction fails', () => {
+    expect(() => litectlWriteTransaction(database, () => {
+      putRefreshResource(database, {
+        apiVersion: 'radar/v1',
+        kind: 'FeedSession',
+        metadata: { name: 'feed-aborted' },
+        spec: { source: 'twitter-main-following', generation: 'aborted' },
+        status: {
+          nextCursor: null,
+          hasMore: false,
+          orderedMessageRefs: [],
+          pageCount: 0,
+          lastPage: '',
+          lastWindow: '',
+        },
+      })
+      putRefreshResource(database, {
+        apiVersion: 'radar/v1',
+        kind: 'FeedPage',
+        metadata: { name: 'feed-aborted-000000' },
+        spec: {
+          session: 'feed-aborted',
+          window: 'feed-window-1',
+          ordinal: 0,
+          mode: 'restart',
+          inputCursor: null,
+          outputCursor: null,
+          hasMore: false,
+          fetchedAt: 1,
+          messageRefs: [],
+        },
+        status: {},
+      })
+      throw new Error('abort feed page commit')
+    })).toThrow('abort feed page commit')
+    expect(getRefreshResource(database, FeedSessionResource, 'feed-aborted')).toBeNull()
+    expect(getRefreshResource(database, FeedPageResource, 'feed-aborted-000000')).toBeNull()
   })
 })
 

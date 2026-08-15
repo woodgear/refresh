@@ -6,6 +6,8 @@ import { recordOperation, recordResourceWrite, recordValidationFailure } from '.
 import {
   FolloweeWindowItemResource,
   FolloweeWindowResource,
+  FeedPageResource,
+  FeedSessionResource,
   MediaObjectResource,
   OverlayEntryResource,
   RefreshWindowItemResource,
@@ -107,6 +109,18 @@ function jsonFiles(directory: string): string[] {
 
 export async function putResource(resource: Resource): Promise<void> {
   putResourceSync(resource)
+}
+
+export async function commitFeedPageInStore(session: Resource, page: Resource): Promise<void> {
+  writeTransaction(() => {
+    if (session.kind !== FeedSessionResource.kind) throw new Error(`expected FeedSession, got ${session.kind}`)
+    if (page.kind !== FeedPageResource.kind) throw new Error(`expected FeedPage, got ${page.kind}`)
+    if (getRefreshResource(database(), FeedPageResource, page.metadata.name)) {
+      throw new Error(`feed page already exists: ${page.metadata.name}`)
+    }
+    putResourceSync(session)
+    putResourceSync(page)
+  })
 }
 
 export async function getResource(definition: ResourceDefinition, name: string): Promise<Resource | null> {

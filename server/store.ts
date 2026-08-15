@@ -3,6 +3,7 @@ import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import {
   initResourceStore,
+  commitFeedPageInStore,
   listResourceNames,
   putWindowFile,
   readWindowFileFromStore,
@@ -194,6 +195,11 @@ export async function putMediaObject(originUrl: string, entry: { file: string; b
 export async function putStoredResource(resource: Resource): Promise<void> {
   await ensureDirs()
   await resourcePutResource(resource)
+}
+
+export async function commitFeedPage(session: Resource, page: Resource): Promise<void> {
+  await ensureDirs()
+  await commitFeedPageInStore(session, page)
 }
 
 export async function getStoredResource(definition: ResourceDefinition, name: string): Promise<Resource | null> {
