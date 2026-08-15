@@ -62,6 +62,9 @@ No stop condition was triggered. The raw-number drift was fixed in litectl itsel
 - The post-cutover constrained acceptance chain passed unchanged: 30 unit tests, 11 litectl contracts, typecheck, production build, and `PASS=140 FAIL=0`.
 - The shared litectl exporter was restarted on the V2 system artifact and continued serving remote-replica metrics. Its SMS and sleep source databases remained V1 and were not migrated as part of the Refresh cutover.
 - No complexity stop condition was triggered through production cutover.
+- The first live UI aggregate request later exposed one Bun 1.3.5 SIGILL during the Zhihu archive phase. systemd restarted the process once; no FeedSession/page transaction had committed and the V2 database remained integral.
+- The same real three-source head request then succeeded in an isolated V2 backend and in the restarted production process. Production continuation committed page 2 with all three source pages, and a clean `control-ui` browser rendered the saved session with no runtime exception, API failure, or horizontal overflow.
+- The coredump stack stayed inside Bun and did not enter the loaded litectl extension. The incident remains recorded as runtime residual risk; Refresh did not add a fallback, dual write, or litectl-specific business branch.
 
 ## Continuation Follow-through
 
