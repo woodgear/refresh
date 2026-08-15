@@ -1,6 +1,6 @@
 # 连续获取与跨平台聚合 Feed
 
-> 状态：产品与架构交接稿，2026-08-10。2026-08-15 已完成确定性 fetcher 契约、基于 litectl V2 的单 source FeedSession/FeedPage 持久化与 API 纵切，并接入知乎推荐/关注和 B 站关注/热门真实 cursor；Twitter、聚合、updates 和 UI 尚未实现。
+> 状态：产品与架构交接稿，2026-08-10。2026-08-15 已完成确定性 fetcher 契约、基于 litectl V2 的单 source FeedSession/FeedPage 持久化与 API 纵切，以及全部当前注册 source 的真实 cursor；聚合、updates 和 UI 尚未实现。
 
 ## 1. 产品目标
 
@@ -66,7 +66,7 @@ Refresh 最终不是单个平台的阅读器，而是所有个人信息流的统
 - source 已按 `account × capability` 注册。
 - 知乎 fetcher 会跟随 `paging.next`；B 站关注流会跟随 `offset`；B 站热门使用页码；Twitter 会滚动页面触发更多 GraphQL 响应。
 
-当前 API 纵切接入了确定性 mock、知乎 `paging.next` URL、B 站关注流 offset 和热门流页码。真实 adapter 的逻辑页把 `count` 视为目标数量并保留完整上游页，避免截断上游页后永久跳过尾部条目。知乎 next URL 会在 adapter 内校验为同源且与 capability 路径匹配。Twitter 的分页仍只发生在**单次抓取内部**；调用 Twitter FeedSession API 会明确返回 `501`，不会静默从头抓取。
+当前 API 纵切接入了确定性 mock、知乎 `paging.next` URL、B 站关注流 offset / 热门流页码，以及 Twitter HomeTimeline bottom cursor。真实 adapter 的逻辑页把 `count` 视为目标数量并保留完整上游页，避免截断上游页后永久跳过尾部条目。知乎 next URL 会在 adapter 内校验为同源且与 capability 路径匹配。Twitter 每次从当前 x.com 页面捕获 fresh GET/POST GraphQL request 模板，在同一 tab 内注入持久化 bottom cursor；authorization、CSRF 和 transaction headers 只存在于该次内存请求，不进入资源。
 
 另外：
 
@@ -163,7 +163,7 @@ fetchNext(source, cursor, count): Promise<FetchPageResult>
 | B 站关注 | 已接入 `ContinuationFetcher` | [x] 输出并恢复 offset；真实 head→next 无重叠验证通过 |
 | B 站热门 | 已接入 `ContinuationFetcher` | [x] 输出下一页编号；它仍不是个性化推荐 |
 | B 站个性化推荐 | 尚未注册 | 从真实首页网络请求确认接口和 cursor，新增独立 `recommend` capability |
-| Twitter 推荐/关注 | 滚动并拦截 GraphQL | 解析 bottom cursor，并用 cursor 驱动下一页请求 |
+| Twitter 推荐/关注 | 已接入 `ContinuationFetcher` | [x] 捕获 fresh GraphQL 模板，解析并恢复 bottom cursor；真实 head→next 验证通过 |
 
 不能继续用 mockup 中 `bilibili-main-recommend → bilibili-main-popular` 的别名作为正式产品行为。
 
@@ -195,7 +195,7 @@ fetchNext(source, cursor, count): Promise<FetchPageResult>
 1. [x] 用确定性 mock fetcher 定义 `restart/continue`、cursor 提交和失败重试测试。
 2. [x] 增加 FeedSession 与 page API，保留 RefreshWindow 作为底层 Job。
 3. [x] 让单一 mock source 的获取更多端到端成立，包括跨进程重启续取。
-4. [~] 为真实平台补齐可持久化 cursor：知乎和 B 站已完成，Twitter 待做。
+4. [x] 为当前真实平台补齐可持久化 cursor：知乎、B 站和 Twitter 均完成。
 5. 通过真实网络确认并接入 B 站个性化推荐 source。
 6. 将 mockup 的本地切片替换为 page API，并将新内容提示接到真实 updates 状态。
 7. 实现确定性聚合 ranker；个性化算法作为后续独立迭代。

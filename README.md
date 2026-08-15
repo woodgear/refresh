@@ -105,7 +105,7 @@ GET  /api/v1/feedsessions/{name}/messages
 POST /api/v1/feedsessions/{name}/pages
 ```
 
-客户端按 session 名继续，不接触平台原始 cursor。知乎推荐/关注和 B 站关注/热门已支持真实 continuation；Twitter source 当前明确返回 `501`，不会退化成从头抓取。
+客户端按 session 名继续，不接触平台原始 cursor。当前注册的知乎、B 站和 Twitter source 均已支持真实 continuation；未来未实现的平台或 capability 会明确返回 `501`，不会退化成从头抓取。
 
 ## 部署
 

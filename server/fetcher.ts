@@ -207,6 +207,10 @@ class CdpContinuationFetcher implements ContinuationFetcher {
       const { fetchZhihuPage } = await import('./cdp-zhihu')
       return fetchZhihuPage(source.capability, count, cursor, log)
     }
+    if (source.platform === 'twitter' && (source.capability === 'recommend' || source.capability === 'following')) {
+      const { fetchTwitterPage } = await import('./cdp-twitter')
+      return fetchTwitterPage(source.capability, count, cursor, log)
+    }
     throw new ContinuationUnsupportedError(`continuation is not implemented for source: ${source.name}`)
   }
 }

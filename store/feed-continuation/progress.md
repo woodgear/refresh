@@ -18,7 +18,10 @@
 - Constrained read-only real probes passed without database writes: follow returned 21 then 20 normalized refs, popular returned 20 then 20, and both head/next pairs had zero overlap.
 - Added real Zhihu recommend/follow continuation. The adapter stores a normalized `paging.next` path only after validating the Zhihu origin, capability-specific API path, and versioned cursor shape.
 - Constrained read-only real probes passed without database writes: recommend returned 6 then 6 normalized refs, follow returned 14 then 18, and both head/next pairs had zero overlap.
-- Twitter is now the only registered platform that remains explicit `501 Not Implemented` for FeedSession APIs.
+- Added real Twitter recommend/following continuation. The adapter captures the current GraphQL GET or POST request template, replays it with the persisted bottom cursor, and never stores temporary authorization, CSRF, or transaction headers.
+- Constrained read-only real probes passed without database writes: recommend returned 35 then 35 normalized refs with zero overlap; following returned 42 then 40 with two platform repeats, which the FeedSession published order deduplicates.
+- Final constrained verification passed all 118 assertions in 23.280s wall time, using 3.544s CPU and 211.4 MiB peak memory under `CPUQuota=100%`, `MemoryMax=2G`, and `TasksMax=64`.
+- Every currently registered source now implements `ContinuationFetcher`. Unknown future platforms or capabilities remain explicit `501 Not Implemented`.
 
 ## Stop Evidence
 
