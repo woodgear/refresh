@@ -11,3 +11,5 @@
 - Never mutate the real database during development verification.
 - A complex one-time migrator is acceptable; a complex permanent facade or business-layer litectl branching is not.
 - Raw payload reconciliation is exact. litectl must use serde_json `float_roundtrip`; never weaken reconciliation to tolerate numeric drift.
+- Production Refresh uses `/usr/local/bin/litectl`; require an in-memory extension probe returning format 2 before restarting the V2 application.
+- The production database is outside the k2 Litestream-managed root. Its immediate rollback source is `refresh.db.pre-litectl-v2.sqlite`, created and integrity-checked by the automatic migration.

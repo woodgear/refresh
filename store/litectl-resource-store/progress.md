@@ -42,6 +42,14 @@ Current result: passed.
 
 No stop condition was triggered. The raw-number drift was fixed in litectl itself; Refresh did not gain a tolerance or compatibility branch.
 
+## Production Cutover Preparation
+
+- Confirmed `refresh.service` is the production owner and directly listens on port 13002; the old tmux split-port script is not active.
+- Confirmed the running service resolves `litectl` to `/usr/local/bin/litectl`.
+- A read-only in-memory extension probe showed that `/usr/local/bin/litectl` creates format 1, while the reviewed Maid artifact creates format 2. Restarting the V2 Refresh code before publishing the V2 binary is therefore forbidden and would fail at the startup gate before touching the database.
+- Added the authoritative binary publication, service cutover, acceptance, and database rollback checklist to the devops SQLite operations document. No binary, service, or production database was changed while preparing it.
+- The real database remains the exact custom ResourceStore schema, passes `PRAGMA integrity_check`, and has no migration backup or temporary target yet.
+
 ## Continuation Follow-through
 
 - The first post-migration feature now uses `FeedSession` + independent Status and immutable `FeedPage` resources.

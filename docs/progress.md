@@ -46,6 +46,8 @@ verify.sh 全绿（A1-A4, A6, A9）且 A5/A7/A8 均为 [A] awaiting-user → loo
 
 ## 迭代日志（续）
 
+- 2026-08-15 / litectl V2 生产切换准备 / 确认生产 `refresh.service` 直接监听 13002，当前 PATH 命中 `/usr/local/bin/litectl`；内存扩展探针证明系统制品仍创建 format 1，而 Maid 已验证制品创建 format 2，因此当前禁止直接重启。unit 显式固定 `LITECTL_BIN=/usr/local/bin/litectl`，Refresh 文档记录自动迁移与复杂度停止条件，实际二进制发布、停机迁移和回滚步骤由 devops SQLite 运维文档负责。真实数据库未修改。
+
 - 2026-08-15 / 真实 FeedSession UI / React 首页不再查询 `/messages?limit=200` 作为 feed：`all` 显式创建知乎/Twitter/B站推荐聚合 generation，单 source 各自复用 session；本地分页耗尽后才触发平台 continuation，失败保留列表并可重试，重开创建新 generation。浏览器只持久化 session name 与 `{messageName, offset}`，硬刷新直接读取非零 offset 的有界窗口并恢复同一首个可见 Message；连续 feed 移除会破坏发布顺序的时间/未读重排。新增真实 updates API，以 source membership、未发布集合和 lastSeen RefreshWindow 时间计算。隔离 CDP 验证 StrictMode 单创建、触底、复用、重开及 390px 无溢出；30 unit、10 litectl contracts、受限 `PASS=140 FAIL=0`。
 
 - 2026-08-15 / FeedSession 消息分页 / `GET /feedsessions/{name}/messages` 新增稳定的 append-only `offset + limit` 契约，默认 50、上限 200，返回 `total` 和 `nextOffset`。仍复用已测得 100k refs 为 56.6ms 的 typed immutable-page 顺序派生，不为当前没有证据的读瓶颈新增 litectl SQL/索引抽象。跨进程 continuation 追加后旧 offset 仍读取同一位置，受限验收 `PASS=139 FAIL=0`。

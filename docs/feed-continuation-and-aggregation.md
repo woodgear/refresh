@@ -224,3 +224,17 @@ mockup 中原有的 `bilibili-main-recommend → bilibili-main-popular` 别名�
 - 每个平台默认 page size，以及聚合页的目标条数。
 - 后台检查新内容的频率和是否复用 scheduler。
 - 第一版聚合配额及未来推荐算法使用哪些行为信号。
+
+## 11. litectl V2 生产切换边界
+
+Refresh 的业务代码不感知 V1/V2，也没有双写或兼容分支。启动时的唯一存储入口负责：
+
+1. 从 `LITECTL_BIN` 导出 SQLite 扩展，并先在内存库确认它创建 format 2。
+2. 精确识别旧自研 ResourceStore schema；未知 schema 直接失败。
+3. 在同目录构建完整 V2 临时库，逐资源对账并执行 `PRAGMA integrity_check`。
+4. checkpoint 并锁住旧库，保留 `refresh.db.pre-litectl-v2.sqlite`，再原子替换 `refresh.db`。
+5. 后续启动只打开 litectl 数据库，不回退读取旧表。
+
+如果引入 litectl 后需要业务 service 判断存储版本、手写 Status/link/UID、广泛使用 raw SQL、丢失 typed resource 语义，或长期代码量和分支明显增加，切换必须停止并重新审视抽象。当前实现没有触发这些条件：迁移和信封拆装都位于 ResourceStore/facade，FeedSession、聚合和 updates 仍只使用 typed resource。
+
+生产部署、二进制发布、停机顺序和数据库回滚的权威清单在 devops 仓库的 [SQLite 数据面运维文档](https://github.com/woodgear/devops/blob/master/docs/ops/sqlite-data-plane.md#refresh-litectl-v2-cutover)。真实数据库切换不是提交代码或重启服务的隐含步骤，必须单独执行并验收。
