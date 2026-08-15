@@ -14,7 +14,7 @@
 pnpm install
 pnpm start        # 后端(bun, :3001) + 前端(vite, :5173)，均监听 0.0.0.0
 pnpm server       # 仅后端
-./verify.sh       # 验收冒烟（139 断言，全 mock 隔离环境，~25s）——改完必跑，全绿才算完
+./verify.sh       # 验收冒烟（140 断言，全 mock 隔离环境，~25s）——改完必跑，全绿才算完
 bunx tsc --noEmit # 类型检查（vite build 不做类型检查）
 ```
 
@@ -56,7 +56,8 @@ src/
   components/MessageCard.tsx # 卡片（list/grid 两形态、lightbox、视口自动已读）
   components/LoginBanner.tsx # 未登录横幅 + 扫码弹窗
   components/AdminPage.tsx   # 管理页：账号状态/调度器开关/日志 tail
-  routes/index.tsx           # feed（工具条+已读管线）/ 刷新历史 / 管理 三个视图
+  hooks/useFeedSession.ts    # UI generation 复用、分页、触底续页、重试与重开状态机
+  routes/index.tsx           # FeedSession feed（工具条+已读管线）/ 刷新历史 / 管理三个视图
 scripts/migrate-legacy.ts    # 旧 data/*.json → window 档案（幂等，已跑过）
 verify.sh                    # 回归套件（也是验收清单的可执行形式）
 data/（gitignore）
@@ -92,6 +93,7 @@ POST  /api/v1/loginsessions  GET /loginsessions/{id}[/qr]  POST /loginsessions/{
 POST  /api/v1/refreshwindows  GET /refreshwindows/{name}[?watch=1]   # watch=SSE
 POST  /api/v1/feedsessions  GET /feedsessions[/{name}]
 POST  /api/v1/feedsessions/{name}/pages  GET /feedsessions/{name}/messages?offset=&limit=
+GET   /api/v1/feedsessions/{name}/updates
 GET|PATCH /api/v1/scheduler              # 单例：{spec:{enabled,intervalMs}}
 GET   /api/v1/logs?date=&lines=          # 日志 tail
 GET   /api/v1/media/{hash}  /api/v1/media-proxy?url=

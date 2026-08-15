@@ -231,6 +231,7 @@ assert_eq "2" "$(echo "$FEED_MESSAGE_PAGE" | jq '.items | length')" "FeedSession
 assert_eq "3" "$(echo "$FEED_MESSAGE_PAGE" | jq -r .total)" "FeedSession messages 返回总数"
 assert_eq "2" "$(echo "$FEED_MESSAGE_PAGE" | jq -r .nextOffset)" "FeedSession messages 返回下一稳定 offset"
 assert_eq "400" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/feedsessions/$FEED_NAME/messages?offset=-1")" "FeedSession messages 拒绝非法 offset"
+assert_eq "0" "$(curl -s "$BASE/feedsessions/$FEED_NAME/updates" | jq -r .count)" "FeedSession updates 使用真实本地基线"
 assert_eq "2" "$(sqlite3 "$TMPDIR/refresh.db" "select count(*) from resource_links where relation in ('page-of','page-window');")" "FeedPage 物化 session/window links"
 
 log "== Aggregate FeedSession: 显式 sources、确定性排序、cursor 不出 API =="

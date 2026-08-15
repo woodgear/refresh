@@ -298,6 +298,10 @@ export async function getMessage(name: string) {
   return merged
 }
 
+export function messageResources(): Resource[] {
+  return [...messages.values()]
+}
+
 export async function listAuthors(opts: { labelSelector?: string; limit?: number }) {
   // overlay 的 label（如 category）参与 selector 匹配，所以先合并再过滤
   const merged = await withOverlay('authors', [...authors.values()])

@@ -164,6 +164,41 @@ export const SOURCES: SourceInfo[] = [
   { name: 'bilibili-main-popular', account: 'bilibili-main', platform: 'bilibili', label: 'B站 · 热门' },
 ]
 
+export const DEFAULT_RECOMMENDATION_SOURCES = [
+  'zhihu-main-recommend',
+  'twitter-main-recommend',
+  'bilibili-main-recommend',
+] as const
+
+export interface FeedSession {
+  apiVersion: string
+  kind: 'FeedSession'
+  metadata: ResourceMeta
+  spec: {
+    source: string
+    sources?: string[]
+    generation: string
+  }
+  status: {
+    hasMore: boolean
+    pageCount: number
+    lastPage: string
+    failedSources?: string[]
+  }
+}
+
+export interface FeedMessagePage {
+  items: Message[]
+  total: number
+  offset: number
+  limit: number
+  nextOffset: number | null
+}
+
+interface FeedSessionTransition {
+  session: FeedSession
+}
+
 // ---------- fetch 封装 ----------
 
 async function getJson<T>(path: string): Promise<T> {
@@ -225,21 +260,10 @@ function normalizeApiPath(path: string): string {
     .replace(/\/api\/v1\/followees\/[^/?]+/g, '/api/v1/followees/:name')
     .replace(/\/api\/v1\/refreshwindows\/[^/?]+/g, '/api/v1/refreshwindows/:name')
     .replace(/\/api\/v1\/followeewindows\/[^/?]+/g, '/api/v1/followeewindows/:name')
+    .replace(/\/api\/v1\/feedsessions\/[^/?]+/g, '/api/v1/feedsessions/:name')
 }
 
 // ---------- hooks ----------
-
-export function useMessages(source: string, opts?: { sort?: 'time' | 'unread-first'; unreadOnly?: boolean }) {
-  const params = new URLSearchParams()
-  if (source !== 'all') params.set('labelSelector', `source=${source}`)
-  params.set('limit', '200')
-  if (opts?.sort) params.set('sort', opts.sort)
-  if (opts?.unreadOnly) params.set('unread', 'true')
-  return useQuery({
-    queryKey: ['messages', source, opts?.sort ?? 'time', opts?.unreadOnly ?? false],
-    queryFn: () => getJson<{ items: Message[] }>(`/api/v1/messages?${params}`).then(r => r.items),
-  })
-}
 
 export function useMessagesByNames(names: string[] | undefined) {
   return useQuery({
@@ -315,6 +339,15 @@ export function useUnreadCounts() {
   })
 }
 
+export function useFeedUpdates(sessionName: string | null) {
+  return useQuery({
+    queryKey: ['feed-updates', sessionName],
+    enabled: sessionName !== null,
+    queryFn: () => getJson<{ count: number }>(`/api/v1/feedsessions/${sessionName}/updates`),
+    refetchInterval: 30_000,
+  })
+}
+
 export interface Scheduler {
   kind: 'Scheduler'
   spec: { enabled: boolean; intervalMs: number }
@@ -353,6 +386,7 @@ export function useInvalidate() {
     void qc.invalidateQueries({ queryKey: ['followees'] })
     void qc.invalidateQueries({ queryKey: ['followee-windows'] })
     void qc.invalidateQueries({ queryKey: ['accounts'] })
+    void qc.invalidateQueries({ queryKey: ['feed-updates'] })
   }
 }
 
@@ -372,6 +406,25 @@ export function patchFollowee(name: string, patch: { labels?: Record<string, str
 
 export function exportFollowees(): Promise<FolloweeExport> {
   return getJson('/api/v1/followees/export')
+}
+
+export function createFeedSession(feedKey: string, count = 20): Promise<FeedSessionTransition> {
+  const spec = feedKey === 'all'
+    ? { sources: [...DEFAULT_RECOMMENDATION_SOURCES], count }
+    : { source: feedKey, count }
+  return send('POST', '/api/v1/feedsessions', { spec })
+}
+
+export function getFeedSession(name: string): Promise<FeedSession> {
+  return getJson(`/api/v1/feedsessions/${name}`)
+}
+
+export function getFeedMessages(name: string, offset: number, limit = 50): Promise<FeedMessagePage> {
+  return getJson(`/api/v1/feedsessions/${name}/messages?offset=${offset}&limit=${limit}`)
+}
+
+export function continueFeedSession(name: string, count = 20): Promise<FeedSessionTransition> {
+  return send('POST', `/api/v1/feedsessions/${name}/pages`, { spec: { count } })
 }
 
 /** 订阅 refresh window 的 SSE 进度；返回取消函数 */

@@ -1,6 +1,6 @@
 # 连续获取与跨平台聚合 Feed
 
-> 状态：产品与架构交接稿，2026-08-10。2026-08-15 已完成 litectl V2 FeedSession/FeedPage、全部当前 source（含 B 站个性化推荐）的真实 cursor，以及显式 source 列表的确定性聚合 session；updates 和 UI 尚未实现。
+> 状态：产品与架构交接稿，2026-08-10。2026-08-15 已完成 litectl V2 FeedSession/FeedPage、全部当前 source（含 B 站个性化推荐）的真实 cursor、显式 source 列表的确定性聚合 session、真实 updates 计数和 React UI 接入。
 
 ## 1. 产品目标
 
@@ -67,6 +67,9 @@ Refresh 最终不是单个平台的阅读器，而是所有个人信息流的统
 - 知乎 fetcher 会跟随 `paging.next`；B 站关注流会跟随 `offset`，热门使用页码，个性化推荐使用首页 fresh counters；Twitter 使用 HomeTimeline bottom cursor。
 - 聚合 session 持久化每个 source 的独立 cursor；`AggregateFeedPage` 保存发布顺序，`FeedSourcePage` 强关联本次 source window 并保留完整 membership。
 - 聚合 ranker 按调用方给出的 source 顺序确定性交错；单源 fetch 失败显式记录且不推进该源 cursor，全部失败不提交。
+- React 首页按 feed key 复用 generation，分页读取本地已发布内容，触底后才请求下一平台 page；失败保留当前列表并在尾部重试。
+- 浏览器只持久化公开 FeedSession 名和 `{messageName, offset}` 阅读位置，重载直接从该 offset 读取有界窗口。显式重开创建新 generation，旧 session 继续作为不可变历史保留。
+- updates 统计属于 session source、尚未发布、且在 generation 建立后被 RefreshWindow 观察到的本地 Message；网页每 30 秒读取真实计数。
 
 当前 API 纵切接入了确定性 mock、知乎 `paging.next` URL、B 站关注流 offset / 热门流页码，以及 Twitter HomeTimeline bottom cursor。真实 adapter 的逻辑页把 `count` 视为目标数量并保留完整上游页，避免截断上游页后永久跳过尾部条目。知乎 next URL 会在 adapter 内校验为同源且与 capability 路径匹配。Twitter 每次从当前 x.com 页面捕获 fresh GET/POST GraphQL request 模板，在同一 tab 内注入持久化 bottom cursor；authorization、CSRF 和 transaction headers 只存在于该次内存请求，不进入资源。
 
@@ -122,7 +125,7 @@ FeedSession 管 O(1) 连续上下文；RefreshWindow 管每次抓取的执行和
 POST /api/v1/feedsessions                     # 建立新 generation
 GET  /api/v1/feedsessions/{name}/messages     # 读取已经发布的有序结果
 POST /api/v1/feedsessions/{name}/pages        # 获取并追加下一页
-GET  /api/v1/feedsessions/{name}/updates      # 查询头部新增数量
+GET  /api/v1/feedsessions/{name}/updates      # 查询头部新增数量（已实现）
 ```
 
 具体 URL 可以调整，但外部用户必须能只通过 API 完成网页中的全部动作。
@@ -201,7 +204,7 @@ mockup 中原有的 `bilibili-main-recommend → bilibili-main-popular` 别名�
 3. [x] 让单一 mock source 的获取更多端到端成立，包括跨进程重启续取。
 4. [x] 为当前真实平台补齐可持久化 cursor：知乎、B 站和 Twitter 均完成。
 5. [x] 通过真实网络确认并接入 B 站个性化推荐 source。
-6. 将 mockup 的本地切片替换为 page API，并将新内容提示接到真实 updates 状态。
+6. [x] 在真实 React UI 中用 page API 替换本地归档切片，并将新内容提示接到真实 updates 状态；HTML mockup 保留为历史设计原型。
 7. [x] 实现显式 sources 的确定性聚合 ranker、独立 source cursor、部分失败和跨进程 continuation；个性化算法作为后续独立迭代。
 
 ## 9. 验收标准
@@ -209,9 +212,9 @@ mockup 中原有的 `bilibili-main-recommend → bilibili-main-popular` 别名�
 - 同一 FeedSession 连续获取三页，页面之间不重复，重启服务后仍能继续。
 - 抓取成功但归档失败时 cursor 不前移；重试能拿到同一页。
 - “获取更多”不会创建新 generation，也不会改变已展示内容的顺序。
-- “重新开始”创建新 generation，并能计算真实的新内容数量。
+- [x] “重新开始”创建新 generation，并能计算真实的新内容数量。
 - [x] 一个 source 到底或 fetch 失败时，聚合 session 仍能从其他 source 继续；archive/契约错误不降级。
-- 网页所有操作都能由外部 API 消费者复现。
+- [x] 网页所有操作都能由外部 API 消费者复现。
 - B 站热门与个性化推荐是两个不同 source，不使用别名混淆。
 - mock 测试覆盖 cursor、去重、并发加载锁、失败重试和聚合 source 耗尽。
 

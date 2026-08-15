@@ -102,6 +102,7 @@ Continuation API：
 POST /api/v1/feedsessions
 GET  /api/v1/feedsessions/{name}
 GET  /api/v1/feedsessions/{name}/messages?offset=0&limit=50
+GET  /api/v1/feedsessions/{name}/updates
 POST /api/v1/feedsessions/{name}/pages
 ```
 
@@ -110,6 +111,7 @@ POST /api/v1/feedsessions/{name}/pages
 客户端按 session 名继续，不接触平台原始 cursor。当前注册的知乎、B 站和 Twitter source 均已支持真实 continuation；未来未实现的平台或 capability 会明确返回 `501`，不会退化成从头抓取。B 站热门与登录首页个性化推荐分别注册为 `bilibili-main-popular` 和 `bilibili-main-recommend`，不互相别名。
 FeedSession 只保存 O(1) continuation 状态；消息顺序由关联的不可变 FeedPage / AggregateFeedPage 按 ordinal 派生，避免长 session 在每次追加时重写全部历史。
 消息读取返回稳定的 append-only offset 分页以及 `total` / `nextOffset`；`limit` 默认为 50、最大 200。
+网页首页直接消费这些接口：“为你推荐”使用知乎、Twitter、B 站的显式推荐 source 列表；接近底部时先读本地分页，再继续平台 cursor。每个 feed 的 session 名和 `{messageName, offset}` 阅读位置保存在浏览器本地，重载时直接读取该 offset 的有界窗口；重新开始会创建新 generation，后台归档的新内容通过真实 updates 计数提示。
 
 ## 部署
 

@@ -1,6 +1,6 @@
 import { useUIStore } from '@/stores/uiStore'
 import { cn } from '@/lib/utils'
-import { SOURCES, useAccounts, useUnreadCounts } from '@/api/radar'
+import { DEFAULT_RECOMMENDATION_SOURCES, SOURCES, useAccounts, useUnreadCounts } from '@/api/radar'
 import { useRefreshSources } from '@/hooks/useRefreshSources'
 import { Sparkles, RefreshCw, Layers, Rss, Settings, Users } from 'lucide-react'
 
@@ -36,6 +36,7 @@ export function Sidebar({ onNavigate, className }: { onNavigate?: () => void; cl
 
       <nav className="flex-1 space-y-1 overflow-y-auto p-2">
         <button
+          data-source="all"
           onClick={nav(() => setActiveSource('all'))}
           className={cn(
             'flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors hover:bg-background/80',
@@ -43,7 +44,7 @@ export function Sidebar({ onNavigate, className }: { onNavigate?: () => void; cl
           )}
         >
           <Sparkles className="h-4 w-4" />
-          全部
+          为你推荐
           {(unread.data?.total ?? 0) > 0 && (
             <span className="ml-auto text-xs tabular-nums opacity-70">{unread.data!.total}</span>
           )}
@@ -60,6 +61,7 @@ export function Sidebar({ onNavigate, className }: { onNavigate?: () => void; cl
               return (
                 <div key={source.name} className="group flex items-center ml-2">
                   <button
+                    data-source={source.name}
                     onClick={nav(() => setActiveSource(source.name))}
                     className={cn(
                       'flex flex-1 items-center gap-1 rounded-md px-3 py-1.5 text-left text-sm transition-colors hover:bg-background/80',
@@ -128,12 +130,24 @@ export function Sidebar({ onNavigate, className }: { onNavigate?: () => void; cl
 
       <div className="space-y-2 border-t p-3 text-xs text-muted-foreground">
         <button
-          onClick={() => refreshSources(activeSource === 'all' || view !== 'feed' ? SOURCES.map(s => s.name) : [activeSource])}
+          onClick={() => refreshSources(
+            view !== 'feed'
+              ? SOURCES.map(source => source.name)
+              : activeSource === 'all'
+                ? [...DEFAULT_RECOMMENDATION_SOURCES]
+                : [activeSource],
+          )}
           disabled={anyRefreshing}
           className="flex w-full items-center justify-center gap-2 rounded-md border bg-background px-3 py-2 text-foreground transition-colors hover:bg-accent disabled:opacity-50"
         >
           <RefreshCw className={cn('h-3.5 w-3.5', anyRefreshing && 'animate-spin')} />
-          {anyRefreshing ? `抓取中 (${refreshing.size})…` : `刷新${activeSource === 'all' || view !== 'feed' ? '全部' : '当前源'}`}
+          {anyRefreshing
+            ? `抓取中 (${refreshing.size})…`
+            : view !== 'feed'
+              ? '刷新全部'
+              : activeSource === 'all'
+                ? '刷新推荐'
+                : '刷新当前源'}
         </button>
         {lastResult && <p className="px-1">{lastResult}</p>}
         <a

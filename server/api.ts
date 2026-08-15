@@ -9,6 +9,7 @@ import {
   listAuthors,
   listMessages,
   listWindowResources,
+  messageResources,
   unreadCounts,
 } from './resources'
 import {
@@ -39,6 +40,7 @@ import {
   publicAggregateFeedPage,
   publicFeedSourcePage,
 } from './aggregate-feed-sessions'
+import { feedUpdateMessageRefs } from './feed-updates'
 import { patchOverlay, patchOverlayMany, type OverlayEntry } from './store'
 import { mediaFilePath, mediaVariantName, mediaVariantPath, MIME_BY_EXT, isAllowedMediaHost, proxyMediaFetch } from './media'
 import { readFile } from 'fs/promises'
@@ -517,6 +519,20 @@ apiV1.get('/feedsessions/:name/messages', async c => {
       limit: page.limit,
       nextOffset: page.nextOffset,
     })
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, feedSessionErrorStatus(err))
+  }
+})
+
+apiV1.get('/feedsessions/:name/updates', async c => {
+  try {
+    const sessionName = c.req.param('name')
+    const session = await defaultFeedSessionService().get(sessionName)
+    const publishedRefs = isAggregateFeedSession(session)
+      ? await defaultAggregateFeedSessionService().messageRefs(sessionName, session)
+      : await defaultFeedSessionService().messageRefs(sessionName)
+    const messageRefs = feedUpdateMessageRefs(session, publishedRefs, messageResources(), getWindowResource)
+    return c.json({ count: messageRefs.length })
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, feedSessionErrorStatus(err))
   }
