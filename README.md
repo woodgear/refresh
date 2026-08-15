@@ -33,6 +33,7 @@ Refresh 是一个自托管的个人账号 feed API：用你自己的浏览器登
 
 - Bun
 - pnpm
+- litectl（必须导出 storage format V2 扩展）
 - Chrome / Chromium
 - `jq`、`xmllint`（用于 `verify.sh`）
 
@@ -42,6 +43,10 @@ Refresh 是一个自托管的个人账号 feed API：用你自己的浏览器登
 pnpm install
 pnpm start
 ```
+
+后端默认执行 PATH 中的 `litectl extension extract`。需要使用指定制品时设置 `LITECTL_BIN=/path/to/litectl`；旧扩展会在打开数据库前因 format version 不匹配而明确失败。
+
+已有自研 SQLite `data/refresh.db` 会在首次 V2 启动时自动迁移。迁移先全量转换并对账，再原子替换主库，并保留 `data/refresh.db.pre-litectl-v2.sqlite`。迁移期间必须停止旧 Refresh writer。
 
 默认地址：
 
@@ -130,6 +135,7 @@ http://127.0.0.1:${WEB_PORT}
 | --- | --- | --- |
 | `PORT` | 后端端口 | `3001` |
 | `RADAR_DATA_DIR` | 数据根目录 | `./data` |
+| `LITECTL_BIN` | 导出 litectl V2 SQLite 扩展的二进制 | `litectl` |
 | `RADAR_BASE_URL` | RSS 媒体绝对地址 | `http://localhost:$PORT` |
 | `RADAR_CDP_PORT` | 受管 Chrome CDP 端口 | `19223` |
 | `RADAR_PROFILE_DIR` | 受管 Chrome profile 目录 | `./profiles/main` |

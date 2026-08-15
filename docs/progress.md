@@ -46,6 +46,8 @@ verify.sh 全绿（A1-A4, A6, A9）且 A5/A7/A8 均为 [A] awaiting-user → loo
 
 ## 迭代日志（续）
 
+- 2026-08-15 / litectl V2 ResourceStore / 用 litectl V2 替换 750 行自研 SQLite runtime，public PascalCase kind 与 inline status 保持不变，facade 在单事务内拆装 lower-case subject + 独立业务 Status，并物化 window item/overlay link。旧 `refresh.db` 首次启动自动全量转换、逐资源对账、保留备份后原子替换。真实 61,466 资源副本迁移为 92,408 个 V2 资源，单核 36.6s、峰值 1.7GiB，integrity check 与真实数据短启动通过；发现并在 litectl 底层修复浮点 round-trip 导致的 raw 漂移。verify 105 断言全绿，真实数据库未切换。
+
 - 2026-07-14 / 首页虚拟列表 / 首三张卡片的第一张内容图改为 `eager/high`，其余图片保持 `lazy/auto`；列表模式接入 `react-virtuoso@4.18.10`，由成熟库处理动态卡片高度、图片加载后的重测量和滚动窗口，grid 瀑布流保持原实现。线上探针仍取 200 条消息，但桌面/移动端只挂载 2-4 张卡片；OpenObserve 精确 probe 对比中，reload data-to-next-paint 从 361.1ms 降到 19.5ms，LCP 从 536ms 降到 240ms，105 项 verify 全绿。
 
 - 2026-07-14 / LCP attribution 观测 / 前端新增 `web-vitals/attribution`，把 LCP 拆成 TTFB、resource load delay、resource load duration、element render delay 上报到 OpenObserve `refresh_perf` 日志；同时上报 FCP/TTFB/CLS/INP attribution。`ProgressiveImage` 增加 `data-perf-target` 与 `progressive_image.loaded` 聚合样本，区分 `message.grid_cover`、`message.list_media`、`message.author_avatar`、`followee.avatar` 等目标，后续可直接用 OpenObserve 判断 LCP 具体耗时归因。

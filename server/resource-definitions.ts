@@ -1,24 +1,76 @@
 export interface ResourceDefinition<K extends string = string> {
   apiVersion: 'radar/v1'
   kind: K
-  schemaVersion: number
+  storageKind: string
+  schema: Record<string, unknown>
+  statusStorageKind?: string
 }
 
-function defineResource<K extends string>(kind: K): ResourceDefinition<K> {
-  return { apiVersion: 'radar/v1', kind, schemaVersion: 1 }
+const OBJECT_SCHEMA = { type: 'object' } as const
+
+const REFERENCE_SCHEMA = {
+  type: 'object',
+  required: ['apiVersion', 'kind', 'name', 'uid'],
+  properties: {
+    apiVersion: { type: 'string' },
+    kind: { type: 'string' },
+    name: { type: 'string' },
+    uid: { type: 'string' },
+  },
+  additionalProperties: false,
+} as const
+
+function defineResource<K extends string>(
+  kind: K,
+  storageKind: string,
+  options: { statusStorageKind?: string; schema?: Record<string, unknown> } = {},
+): ResourceDefinition<K> {
+  return {
+    apiVersion: 'radar/v1',
+    kind,
+    storageKind,
+    schema: options.schema ?? OBJECT_SCHEMA,
+    statusStorageKind: options.statusStorageKind,
+  }
 }
 
-export const MessageResource = defineResource('Message')
-export const AuthorResource = defineResource('Author')
-export const FolloweeResource = defineResource('Followee')
-export const RefreshWindowResource = defineResource('RefreshWindow')
-export const RefreshWindowItemResource = defineResource('RefreshWindowItem')
-export const FolloweeWindowResource = defineResource('FolloweeWindow')
-export const FolloweeWindowItemResource = defineResource('FolloweeWindowItem')
-export const OverlayEntryResource = defineResource('OverlayEntry')
-export const SchedulerResource = defineResource('Scheduler')
-export const MediaObjectResource = defineResource('MediaObject')
-export const AccountStatusResource = defineResource('AccountStatus')
+const windowItemSchema = (fieldPath: string) => ({
+  type: 'object',
+  required: ['windowRef', 'ordinal', 'raw'],
+  properties: { windowRef: REFERENCE_SCHEMA, ordinal: { type: 'integer', minimum: 0 } },
+  'x-litectl-links': [{ fieldPath, relation: 'item-of' }],
+})
+
+export const MessageResource = defineResource('Message', 'message', { statusStorageKind: 'message-status' })
+export const AuthorResource = defineResource('Author', 'author', { statusStorageKind: 'author-status' })
+export const FolloweeResource = defineResource('Followee', 'followee', { statusStorageKind: 'followee-status' })
+export const RefreshWindowResource = defineResource('RefreshWindow', 'refresh-window', {
+  statusStorageKind: 'refresh-window-status',
+})
+export const RefreshWindowItemResource = defineResource('RefreshWindowItem', 'refresh-window-item', {
+  schema: windowItemSchema('/windowRef'),
+})
+export const FolloweeWindowResource = defineResource('FolloweeWindow', 'followee-window', {
+  statusStorageKind: 'followee-window-status',
+})
+export const FolloweeWindowItemResource = defineResource('FolloweeWindowItem', 'followee-window-item', {
+  schema: windowItemSchema('/windowRef'),
+})
+export const OverlayEntryResource = defineResource('OverlayEntry', 'overlay-entry', {
+  schema: {
+    type: 'object',
+    required: ['entry', 'targetRef'],
+    properties: { entry: { type: 'object' }, targetRef: REFERENCE_SCHEMA },
+    'x-litectl-links': [{ fieldPath: '/targetRef', relation: 'overlay-for' }],
+  },
+})
+export const SchedulerResource = defineResource('Scheduler', 'scheduler')
+export const MediaObjectResource = defineResource('MediaObject', 'media-object', {
+  statusStorageKind: 'media-object-status',
+})
+export const AccountStatusResource = defineResource('AccountStatus', 'account', {
+  statusStorageKind: 'account-status',
+})
 
 export const ALL_RESOURCE_DEFINITIONS = [
   MessageResource,
@@ -44,4 +96,19 @@ export function resourceDefinition(kind: string): ResourceDefinition {
   const definition = definitionsByKind.get(kind)
   if (!definition) throw new Error(`unknown resource kind: ${kind}`)
   return definition
+}
+
+export function statusSchema(): Record<string, unknown> {
+  return {
+    type: 'object',
+    'x-litectl-status': true,
+    required: ['subjectRef', 'controller', 'observedGeneration', 'value'],
+    properties: {
+      subjectRef: REFERENCE_SCHEMA,
+      controller: { const: 'refresh' },
+      observedGeneration: { type: 'integer', minimum: 0 },
+      value: { type: 'object' },
+    },
+    additionalProperties: false,
+  }
 }

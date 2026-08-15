@@ -14,11 +14,11 @@
 pnpm install
 pnpm start        # 后端(bun, :3001) + 前端(vite, :5173)，均监听 0.0.0.0
 pnpm server       # 仅后端
-./verify.sh       # 验收冒烟（74 断言，全 mock 隔离环境，~40s）——改完必跑，全绿才算完
+./verify.sh       # 验收冒烟（105 断言，全 mock 隔离环境，~25s）——改完必跑，全绿才算完
 bunx tsc --noEmit # 类型检查（vite build 不做类型检查）
 ```
 
-依赖真实环境的部分：自管 Chrome（首次用时自动拉起，独立 profile 在 `profiles/main`，CDP 127.0.0.1:19223）里要有三个平台的登录态——掉登录会在网页上引导扫码。verify.sh 不需要它（全 mock）。
+本机需要安装 litectl V2；后端启动时通过 `litectl extension extract` 加载同一份 SQLite 扩展，并明确校验 storage format 2。依赖真实环境的部分：自管 Chrome（首次用时自动拉起，独立 profile 在 `profiles/main`，CDP 127.0.0.1:19223）里要有三个平台的登录态——掉登录会在网页上引导扫码。verify.sh 不需要真实登录态（全 mock）。
 
 ## 架构与文件地图
 
@@ -26,7 +26,11 @@ bunx tsc --noEmit # 类型检查（vite build 不做类型检查）
 server/
   index.ts        # Hono 入口：/api/v1 + /rss；启动时建索引、预热登录态、起调度器
   config.ts       # 账号/源注册表（ACCOUNTS / SOURCES，account × capability）
-  store.ts        # 两层存储原语：不可变 window 档案 + 可变 overlay；原子写
+  store.ts        # 业务存储原语：不可变 window 档案 + 可变 overlay
+  resource-store.ts          # litectl-backed ResourceStore 与业务存储 helper
+  resource-definitions.ts    # public kind → storage kind、schema、Status kind
+  litectl-resource-facade.ts # public 信封与 subject/Status/link 的原子拆装
+  litectl-migration.ts       # 旧自研 SQLite ResourceStore → litectl V2 一次性迁移
   resources.ts    # 内存索引（Message/Author/Window）、labelSelector 查询、未读计数
   normalize.ts    # raw → spec（每平台一个 normalizer，新旧 schema 都容忍）
   refresh.ts      # RefreshWindow 执行器：统一抓取入口，Pending→Running→终态，watch 事件
@@ -53,11 +57,10 @@ src/
 scripts/migrate-legacy.ts    # 旧 data/*.json → window 档案（幂等，已跑过）
 verify.sh                    # 回归套件（也是验收清单的可执行形式）
 data/（gitignore）
-  windows/*.json   # RefreshWindow 档案：只追加不可变，含每条的原始 payload
-  overlay/*.json   # 用户态：labels、已读状态（messages.json / authors.json）
-  media/<sha256>   # 本地化媒体 + index.json（originUrl→file manifest）
+  refresh.db       # litectl V2：资源、独立 Status、labels、links、events
+  refresh.db.pre-litectl-v2.sqlite # 首次自动迁移保留的旧库备份
+  media/<sha256>   # 本地化媒体 blob；元数据是 MediaObject 资源
   logs/radar-*.log # 按天滚动日志
-  scheduler.json   # 调度器开关/间隔
 ```
 
 ## 核心约定（动代码前必读）
@@ -65,7 +68,7 @@ data/（gitignore）
 1. **资源信封**：API 对象都是 `{apiVersion: 'radar/v1', kind, metadata, spec, status}`。
    `radar/v1` 与 `radar/*` annotation 前缀是**内部标识符**，已落在历史档案里，改名需迁移，别轻动。
 2. **`spec.raw` 保真**：normalized 字段全部由 raw 派生。改 normalize 逻辑后重启即对全部历史数据生效（索引重建），不需要重抓。
-3. **档案不可变 / 用户态走 overlay**：`data/windows` 只追加；已读、分类 label 等只写 `data/overlay`，PATCH 即时生效。两者分离是地基，不要往档案里写可变状态。
+3. **档案不可变 / 用户态走 overlay**：RefreshWindow 与 item 资源只追加；已读、分类 label 等只写 `OverlayEntry`，PATCH 即时生效。overlay 通过 `overlay-for` 强引用目标，文件系统只保存媒体 blob。
 4. **统一抓取入口**：一切抓取 = `POST /refreshwindows`（手动/调度/登录后补抓只差 `spec.trigger`）。GET 永远秒回缓存。
 5. **多源归属**：同一条内容被多个源推到时，归属是集合（`radar/sources` annotation），`source=` selector 按集合匹配。消息名带平台前缀全局唯一（`twitter-<id>` / `zhihu-<id>` / `bilibili-<bvid>`）。
 6. **登录态在自管 Chrome 的 profile 里**（`profiles/main`，gitignore）：抓取/检测/登录引导全走 CDP，零外部工具依赖。
@@ -95,6 +98,7 @@ GET   /rss/{source}.xml  /rss/all.xml
 |------|------|------|
 | `PORT` | 后端端口 | 3001 |
 | `RADAR_DATA_DIR` | 数据根目录（测试隔离用） | `./data` |
+| `LITECTL_BIN` | 用于导出 V2 SQLite 扩展的 litectl 二进制 | `litectl` |
 | `RADAR_FETCHER` | `mock`（verify）/ `bb` / 默认按源路由 | 路由 |
 | `RADAR_AUTH_MOCK` | `ok` / `logged_out` 强制登录态 | 真实检测 |
 | `RADAR_SCHEDULER` / `RADAR_SCHEDULE_INTERVAL_MS` | 调度初始默认（落盘配置优先） | on / 30min |
@@ -128,4 +132,4 @@ GET   /rss/{source}.xml  /rss/all.xml
 - 关注流 fetch-until-overlap（长停机断层保险，平时流速 2 条/h 远低于容量，不急）
 - 多账号管理 UI（模型已就绪：Account 资源 + 独立 profile 设计）
 - 作者归类 UI / 自动归类 controller（API 已支持：PATCH author label + authorSelector）
-- 公网暴露的 `?token=` 鉴权；SQLite 迁移（数据量大了再说）
+- 公网暴露的 `?token=` 鉴权

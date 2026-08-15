@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "server": "bun server/index.ts",
     "test": "bun test",
+    "test:litectl": "bun test ./server/litectl-runtime.contract.ts",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {

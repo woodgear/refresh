@@ -1,5 +1,7 @@
 # SQLite Resource Store Progress
 
+> Superseded on 2026-08-15 by `store/litectl-resource-store/`. This file remains the history of the intermediate custom SQLite implementation.
+
 ## 2026-06-21
 
 - Created this plan directory after the current file-backed overlay race caused Refresh to stop.

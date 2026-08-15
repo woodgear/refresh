@@ -76,8 +76,8 @@ for i in $(seq 1 30); do
 done
 assert_eq "Succeeded" "$PHASE" "window 走到 Succeeded"
 assert_eq "3" "$(curl -s "$BASE/refreshwindows/$WIN_NAME" | jq -r .status.stats.new)" "stats.new 正确（广告丢弃、聚合卡拆开）"
-WIN_ROWS=$(sqlite3 "$TMPDIR/refresh.db" "select count(*) from resources where kind='RefreshWindow' and name='$WIN_NAME';" 2>/dev/null)
-WIN_ITEM_ROWS=$(sqlite3 "$TMPDIR/refresh.db" "select count(*) from resources where kind='RefreshWindowItem' and json_extract(spec,'$.window')='$WIN_NAME';" 2>/dev/null)
+WIN_ROWS=$(sqlite3 "$TMPDIR/refresh.db" "select count(*) from resources where kind='refresh-window' and name='$WIN_NAME';" 2>/dev/null)
+WIN_ITEM_ROWS=$(sqlite3 "$TMPDIR/refresh.db" "select count(*) from resources where kind='refresh-window-item' and json_extract(spec_json,'$.windowRef.name')='$WIN_NAME';" 2>/dev/null)
 if [ "$WIN_ROWS" = "1" ] && [ "$WIN_ITEM_ROWS" -ge 1 ] 2>/dev/null; then ok "档案落盘到 SQLite ResourceStore"; else fail "SQLite 档案缺失 (window=$WIN_ROWS items=$WIN_ITEM_ROWS)"; fi
 # 同 source 再抓一轮 → 全部 duplicate
 WIN2_NAME=$(curl -s -X POST "$BASE/refreshwindows" -d '{"spec":{"source":"zhihu-main-recommend"}}' | jq -r .metadata.name)
@@ -205,7 +205,7 @@ assert_eq "1200000" "$(curl -s "$BASE/scheduler" | jq -r .spec.intervalMs)" "PAT
 assert_eq "400" "$(curl -s -o /dev/null -w '%{http_code}' -X PATCH "$BASE/scheduler" -d '{"spec":{"intervalMs":1000}}')" "间隔下限校验"
 curl -s -X PATCH "$BASE/scheduler" -d '{"spec":{"enabled":false}}' >/dev/null
 assert_eq "false" "$(curl -s "$BASE/scheduler" | jq -r .spec.enabled)" "PATCH 关闭"
-SCHED_ROWS=$(sqlite3 "$TMPDIR/refresh.db" "select count(*) from resources where kind='Scheduler' and name='default' and json_extract(spec,'$.enabled')=0;" 2>/dev/null)
+SCHED_ROWS=$(sqlite3 "$TMPDIR/refresh.db" "select count(*) from resources where kind='scheduler' and name='default' and json_extract(spec_json,'$.enabled')=0;" 2>/dev/null)
 if [ "$SCHED_ROWS" = "1" ]; then ok "scheduler 状态落盘到 SQLite ResourceStore"; else fail "Scheduler resource 未落盘"; fi
 
 log "== A8(半自动): RSS 输出 =="
