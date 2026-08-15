@@ -14,3 +14,4 @@
 - Production Refresh uses `/usr/local/bin/litectl`; require an in-memory extension probe returning format 2 before restarting the V2 application.
 - The production database is outside the k2 Litestream-managed root. Its immediate rollback source is `refresh.db.pre-litectl-v2.sqlite`, created and integrity-checked by the automatic migration.
 - Failed custom-store conversion must leave the source database byte-identical and remove the uncommitted backup and temporary V2 database; this is a contract test, not an assumed property.
+- Production Refresh has used storage format V2 since the authorized 2026-08-15 cutover. The preserved custom-store rollback source is `data/refresh.db.pre-litectl-v2.sqlite`; deployment hashes and runtime counts live only in the devops SQLite operations document.

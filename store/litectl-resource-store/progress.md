@@ -53,6 +53,16 @@ No stop condition was triggered. The raw-number drift was fixed in litectl itsel
 - Re-ran the V1-to-V2 evidence under `CPUQuota=100%`, `MemoryMax=2G`, and `TasksMax=64`: four Rust format tests and the Go writer suite passed, including concurrent migration, backup, lifecycle/event reconciliation, and the read-only migration gate.
 - Re-ran the complete Refresh acceptance chain under the same limits: 30 unit tests (104 assertions), 11 litectl contracts (34 assertions), typecheck, production build, and `PASS=140 FAIL=0`; peak memory was 522.8 MiB.
 
+## Production Cutover
+
+- After explicit authorization, published the probed litectl V2 artifact and reloaded the source-controlled Refresh unit with its explicit `LITECTL_BIN` path.
+- The first production start converted the real 61,466-resource custom store, retained the integrity-checked old database backup, rebuilt the expected Message/Author/Followee/Window projections, and served local and public traffic without a restart loop.
+- V2 integrity, storage resource, Status link, business link, label, and event counts were checked directly. Real Message, Followee, unread-count, Scheduler, RSS, metrics, account-auth, local, and public API smoke checks passed.
+- A second production restart reopened V2 without invoking the custom migrator: resource/link counts stayed stable and the old backup size and mtime remained unchanged.
+- The post-cutover constrained acceptance chain passed unchanged: 30 unit tests, 11 litectl contracts, typecheck, production build, and `PASS=140 FAIL=0`.
+- The shared litectl exporter was restarted on the V2 system artifact and continued serving remote-replica metrics. Its SMS and sleep source databases remained V1 and were not migrated as part of the Refresh cutover.
+- No complexity stop condition was triggered through production cutover.
+
 ## Continuation Follow-through
 
 - The first post-migration feature now uses `FeedSession` + independent Status and immutable `FeedPage` resources.

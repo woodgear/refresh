@@ -46,6 +46,8 @@ verify.sh 全绿（A1-A4, A6, A9）且 A5/A7/A8 均为 [A] awaiting-user → loo
 
 ## 迭代日志（续）
 
+- 2026-08-15 / litectl V2 生产切换完成 / 经明确授权发布已探针的 V2 系统制品，`refresh.service` 首次启动自动迁移真实 61,466 条旧资源并保留完整旧库备份；V2 库完整性、资源/Status/业务 link/labels 计数、本地与公网 API、真实 Message/Followee/未读/Scheduler/RSS/metrics 均通过。第二次 V2 restart 保持资源和 link 计数、未改写备份。post-cutover 受限完整链继续为 30 unit / 104 断言、11 contracts / 34 断言、类型检查、构建和 `PASS=140 FAIL=0`；部署哈希与恢复事实以 devops SQLite 运维文档为准。
+
 - 2026-08-15 / litectl V2 完成审计 / 补充“已创建 backup 后转换失败”的契约，要求旧库逐字节不变且清理 backup/tmp；受限复跑 litectl V1→V2 并发迁移、备份、生命周期/事件对账和只读 gate 全绿。Refresh 受限完整链为 30 unit / 104 断言、11 litectl contracts / 34 断言、类型检查、生产构建、`PASS=140 FAIL=0`，峰值 522.8MiB。迁移 commit 的业务 service/API 为零 diff，永久存储代码净增约 63 行但移除了等价自研 DDL/版本/索引/校验/写队列，没有触发复杂度停止条件。
 
 - 2026-08-15 / litectl V2 生产切换准备 / 确认生产 `refresh.service` 直接监听 13002，当前 PATH 命中 `/usr/local/bin/litectl`；内存扩展探针证明系统制品仍创建 format 1，而 Maid 已验证制品创建 format 2，因此当前禁止直接重启。unit 显式固定 `LITECTL_BIN=/usr/local/bin/litectl`，Refresh 文档记录自动迁移与复杂度停止条件，实际二进制发布、停机迁移和回滚步骤由 devops SQLite 运维文档负责。真实数据库未修改。
