@@ -1,6 +1,6 @@
 # 连续获取与跨平台聚合 Feed
 
-> 状态：产品与架构交接稿，2026-08-10。2026-08-15 已完成 litectl V2 FeedSession/FeedPage、全部当前 source 的真实 cursor，以及显式 source 列表的确定性聚合 session；B 站个性化推荐、updates 和 UI 尚未实现。
+> 状态：产品与架构交接稿，2026-08-10。2026-08-15 已完成 litectl V2 FeedSession/FeedPage、全部当前 source（含 B 站个性化推荐）的真实 cursor，以及显式 source 列表的确定性聚合 session；updates 和 UI 尚未实现。
 
 ## 1. 产品目标
 
@@ -64,7 +64,7 @@ Refresh 最终不是单个平台的阅读器，而是所有个人信息流的统
 - 服务重启后能恢复 session 并继续；同一 session 的并发 page 请求明确返回冲突。
 - 平台 cursor 只保存在内部资源表示，FeedSession、FeedPage HTTP 响应均不返回 cursor。
 - source 已按 `account × capability` 注册。
-- 知乎 fetcher 会跟随 `paging.next`；B 站关注流会跟随 `offset`；B 站热门使用页码；Twitter 使用 HomeTimeline bottom cursor。
+- 知乎 fetcher 会跟随 `paging.next`；B 站关注流会跟随 `offset`，热门使用页码，个性化推荐使用首页 fresh counters；Twitter 使用 HomeTimeline bottom cursor。
 - 聚合 session 持久化每个 source 的独立 cursor；`AggregateFeedPage` 保存发布顺序，`FeedSourcePage` 强关联本次 source window 并保留完整 membership。
 - 聚合 ranker 按调用方给出的 source 顺序确定性交错；单源 fetch 失败显式记录且不推进该源 cursor，全部失败不提交。
 
@@ -73,7 +73,7 @@ Refresh 最终不是单个平台的阅读器，而是所有个人信息流的统
 另外：
 
 - `GET /messages` 只有 `limit`，没有稳定的 cursor/offset 响应契约。
-- B 站当前注册的是 `bilibili-main-popular`，调用热门 API；它不是登录用户首页的个性化“推荐”。
+- B 站热门与登录用户首页个性化推荐分别注册为 `bilibili-main-popular` 和 `bilibili-main-recommend`，不互相别名。
 - session message API 当前仍返回完整已发布结果，UI 接入时需要增加稳定的局部分页读取，避免长 session 传输全部历史。
 
 ## 5. 目标架构
@@ -147,7 +147,7 @@ fetchNext(source, cursor, count): Promise<FetchPageResult>
 
 ### 5.4 聚合 Feed
 
-已实现的 API 通过 `spec.sources` 接收显式且有序的 source 列表。暂不提供隐式默认列表：B 站个性化推荐 source 完成前，不能把 `bilibili-main-popular` 混作“为你推荐”。
+已实现的 API 通过 `spec.sources` 接收显式且有序的 source 列表。服务端已定义由知乎推荐、Twitter 推荐和 B 站个性化推荐组成的产品默认列表，供 UI 接入；聚合 API 本身仍要求调用方显式提交列表。
 
 聚合 session 持有多个 source state。获取下一页时：
 
@@ -166,10 +166,10 @@ fetchNext(source, cursor, count): Promise<FetchPageResult>
 | 知乎推荐/关注 | 已接入 `ContinuationFetcher` | [x] 校验、输出并恢复 next URL；真实 head→next 无重叠验证通过 |
 | B 站关注 | 已接入 `ContinuationFetcher` | [x] 输出并恢复 offset；真实 head→next 无重叠验证通过 |
 | B 站热门 | 已接入 `ContinuationFetcher` | [x] 输出下一页编号；它仍不是个性化推荐 |
-| B 站个性化推荐 | 尚未注册 | 从真实首页网络请求确认接口和 cursor，新增独立 `recommend` capability |
+| B 站个性化推荐 | 已接入 `ContinuationFetcher` | [x] 独立 `recommend` capability；恢复首页 fresh counters；真实 head→next 无重叠验证通过 |
 | Twitter 推荐/关注 | 已接入 `ContinuationFetcher` | [x] 捕获 fresh GraphQL 模板，解析并恢复 bottom cursor；真实 head→next 验证通过 |
 
-不能继续用 mockup 中 `bilibili-main-recommend → bilibili-main-popular` 的别名作为正式产品行为。
+mockup 中原有的 `bilibili-main-recommend → bilibili-main-popular` 别名已移除，正式产品行为使用独立个性化 source。
 
 ## 7. Mockup 交接
 
@@ -189,7 +189,7 @@ fetchNext(source, cursor, count): Promise<FetchPageResult>
 - “发现 8 条新内容”在 3.2 秒后由定时器显示，数字不是 API 结果。
 - “重新开始”只在本地移动两条数组元素并重新渲染，没有创建 RefreshWindow 或 FeedSession。
 - source 数量、来源构成、关注方向和 generation 文案是静态演示数据。
-- B 站“推荐”实际读取 `bilibili-main-popular`。
+- B 站“推荐”已读取真实 `bilibili-main-recommend`，但仍通过本地 `/messages` 样本而非 FeedSession page API。
 - 收件箱只展示当前样本的前 12 条，已读动作没有写回 overlay。
 
 因此 mockup 目前验证的是产品布局和操作节奏，不是 continuation API 的实现证明。
@@ -200,7 +200,7 @@ fetchNext(source, cursor, count): Promise<FetchPageResult>
 2. [x] 增加 FeedSession 与 page API，保留 RefreshWindow 作为底层 Job。
 3. [x] 让单一 mock source 的获取更多端到端成立，包括跨进程重启续取。
 4. [x] 为当前真实平台补齐可持久化 cursor：知乎、B 站和 Twitter 均完成。
-5. 通过真实网络确认并接入 B 站个性化推荐 source。
+5. [x] 通过真实网络确认并接入 B 站个性化推荐 source。
 6. 将 mockup 的本地切片替换为 page API，并将新内容提示接到真实 updates 状态。
 7. [x] 实现显式 sources 的确定性聚合 ranker、独立 source cursor、部分失败和跨进程 continuation；个性化算法作为后续独立迭代。
 

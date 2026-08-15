@@ -22,6 +22,9 @@
 - Constrained read-only real probes passed without database writes: recommend returned 35 then 35 normalized refs with zero overlap; following returned 42 then 40 with two platform repeats, which the FeedSession published order deduplicates.
 - Final constrained verification passed all 118 assertions in 23.280s wall time, using 3.544s CPU and 211.4 MiB peak memory under `CPUQuota=100%`, `MemoryMax=2G`, and `TasksMax=64`.
 - Every currently registered source now implements `ContinuationFetcher`. Unknown future platforms or capabilities remain explicit `501 Not Implemented`.
+- Added the distinct `bilibili-main-recommend` source using the logged-in homepage recommendation endpoint. Its versioned cursor persists only the four observed fresh counters and validates their progression invariant; WBI signatures, request headers, and `last_showlist` are never persisted.
+- A constrained read-only production-adapter probe returned 10 then 9 valid BVID items with zero overlap. The cursor advanced from `(1,1,1,4)` through `(2,2,2,7)` to `(3,3,3,10)` without opening the Refresh database.
+- Final validation passed 26 unit tests, 10 litectl contracts, TypeScript, the production build, and the constrained end-to-end suite with `PASS=133 FAIL=0`.
 
 ## Stop Evidence
 

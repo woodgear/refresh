@@ -159,6 +159,7 @@ export const SOURCES: SourceInfo[] = [
   { name: 'zhihu-main-follow', account: 'zhihu-main', platform: 'zhihu', label: '知乎 · 关注' },
   { name: 'twitter-main-recommend', account: 'twitter-main', platform: 'twitter', label: '推特 · 推荐' },
   { name: 'twitter-main-following', account: 'twitter-main', platform: 'twitter', label: '推特 · 关注' },
+  { name: 'bilibili-main-recommend', account: 'bilibili-main', platform: 'bilibili', label: 'B站 · 推荐' },
   { name: 'bilibili-main-follow', account: 'bilibili-main', platform: 'bilibili', label: 'B站 · 关注' },
   { name: 'bilibili-main-popular', account: 'bilibili-main', platform: 'bilibili', label: 'B站 · 热门' },
 ]

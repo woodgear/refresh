@@ -93,7 +93,7 @@ export class CdpFetcher implements Fetcher {
     }
     if (source.platform === 'bilibili') {
       const { fetchBilibiliFeed } = await import('./cdp-bilibili')
-      return fetchBilibiliFeed(source.capability as 'follow' | 'popular', count, log)
+      return fetchBilibiliFeed(source.capability as 'follow' | 'popular' | 'recommend', count, log)
     }
     throw new Error(`no fetcher for platform ${source.platform}`)
   }
@@ -199,7 +199,10 @@ class CdpContinuationFetcher implements ContinuationFetcher {
     cursor: string | null,
     log: (line: string) => void,
   ): Promise<FetchPageResult> {
-    if (source.platform === 'bilibili' && (source.capability === 'follow' || source.capability === 'popular')) {
+    if (
+      source.platform === 'bilibili'
+      && (source.capability === 'follow' || source.capability === 'popular' || source.capability === 'recommend')
+    ) {
       const { fetchBilibiliPage } = await import('./cdp-bilibili')
       return fetchBilibiliPage(source.capability, count, cursor, log)
     }

@@ -41,7 +41,7 @@ server/
   cdp.ts          # CDP 最小客户端 + Chrome 自管（找可执行文件、独立 profile、自拉起）
   cdp-twitter.ts  # 拦截 HomeTimeline/HomeLatestTimeline GraphQL 响应
   cdp-zhihu.ts    # 页面上下文调 topstory/moments API（分页）
-  cdp-bilibili.ts # 页面上下文调 polymer 动态流 / popular API
+  cdp-bilibili.ts # 页面上下文调动态流 / 热门 / 首页个性化推荐 API
   media.ts        # 媒体本地化（sha256+manifest）、直连失败走代理、流式 media-proxy
   auth.ts         # checkAuth（每平台一个检测分支；RADAR_AUTH_MOCK 可 mock）
   login.ts        # LoginSession：知乎/B站扫码镜像、推特中继输入，成功后自动补抓
@@ -73,7 +73,7 @@ data/（gitignore）
 2. **`spec.raw` 保真**：normalized 字段全部由 raw 派生。改 normalize 逻辑后重启即对全部历史数据生效（索引重建），不需要重抓。
 3. **档案不可变 / 用户态走 overlay**：RefreshWindow 与 item 资源只追加；已读、分类 label 等只写 `OverlayEntry`，PATCH 即时生效。overlay 通过 `overlay-for` 强引用目标，文件系统只保存媒体 blob。
 4. **统一抓取档案**：手动/调度/登录后补抓走 `POST /refreshwindows`；连续浏览走 `POST /feedsessions` 与 `/feedsessions/{name}/pages`。两条入口最终都产生不可变 `RefreshWindow`，GET 永远只读本地状态。
-   聚合 session 必须显式提交有序 `sources` 数组；当前不把 B 站热门别名成个性化推荐。
+   聚合 session 必须显式提交有序 `sources` 数组；B 站热门与个性化推荐是不同 source，不做别名。
 5. **多源归属**：同一条内容被多个源推到时，归属是集合（`radar/sources` annotation），`source=` selector 按集合匹配。消息名带平台前缀全局唯一（`twitter-<id>` / `zhihu-<id>` / `bilibili-<bvid>`）。
 6. **登录态在自管 Chrome 的 profile 里**（`profiles/main`，gitignore）：抓取/检测/登录引导全走 CDP，零外部工具依赖。
 7. **媒体本地化**：图片下载到本地（`/api/v1/media/<hash>`），视频不下载（poster + `media-proxy` 流式代理播放）。直连失败自动走代理（`RADAR_PROXY`，默认 127.0.0.1:7890，Bun 不读系统代理）。

@@ -2,6 +2,7 @@
 
 - Aggregate source order is explicit API input and is also the deterministic ranker order.
 - Never alias Bilibili popular as personalized recommend.
+- The UI recommendation default is ordered Zhihu recommend, Twitter recommend, then Bilibili recommend; submit it explicitly to the aggregate API.
 - Preserve complete source fetch membership in FeedSourcePage and publish only ranked unique refs in AggregateFeedPage.
 - A failed source keeps its committed cursor. Successful sources can still commit in the same logical page.
 - All active sources failing means no state transition.

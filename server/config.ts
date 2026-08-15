@@ -27,9 +27,16 @@ export const SOURCES: SourceConfig[] = [
   { name: 'zhihu-main-follow', account: 'zhihu-main', platform: 'zhihu', capability: 'follow' },
   { name: 'twitter-main-recommend', account: 'twitter-main', platform: 'twitter', capability: 'recommend' },
   { name: 'twitter-main-following', account: 'twitter-main', platform: 'twitter', capability: 'following' },
+  { name: 'bilibili-main-recommend', account: 'bilibili-main', platform: 'bilibili', capability: 'recommend' },
   { name: 'bilibili-main-follow', account: 'bilibili-main', platform: 'bilibili', capability: 'follow' },
   { name: 'bilibili-main-popular', account: 'bilibili-main', platform: 'bilibili', capability: 'popular' },
 ]
+
+export const DEFAULT_RECOMMENDATION_SOURCES = [
+  'zhihu-main-recommend',
+  'twitter-main-recommend',
+  'bilibili-main-recommend',
+] as const
 
 export function getSource(name: string): SourceConfig | undefined {
   return SOURCES.find(s => s.name === name)

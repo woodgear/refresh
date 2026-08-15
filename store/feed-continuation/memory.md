@@ -12,4 +12,5 @@
 - Persist Zhihu next URLs only as validated same-origin relative paths bound to their capability.
 - Persist only Twitter's capability-bound bottom cursor. Capture fresh GraphQL templates and temporary auth headers for each request; never store those headers.
 - Treat requested count as a target for cursor adapters. Preserve the complete final upstream page so advancing its cursor cannot lose unreturned tail items.
+- Persist only Bilibili recommendation's versioned fresh-counter sequence. Do not persist WBI signatures, authentication headers, or `last_showlist`.
 - Do not persist the full published order in FeedSession Status. At 100k refs it cost 160.7ms and 5.18 MiB of database growth per write; linked-page derivation cost 56.6ms without copying history on every append.

@@ -46,7 +46,9 @@ verify.sh 全绿（A1-A4, A6, A9）且 A5/A7/A8 均为 [A] awaiting-user → loo
 
 ## 迭代日志（续）
 
-- 2026-08-15 / 确定性跨源 FeedSession / `POST /feedsessions` 新增互斥的显式 `sources` 输入；FeedSession Status 保存各源 O(1) cursor，AggregateFeedPage 保存最终发布顺序，FeedSourcePage 强关联 session / aggregate page / 独立 RefreshWindow 并保留完整 source membership。v1 ranker 按请求 source 顺序 round-robin，单源 fetch 失败不推进其 cursor 且不阻断其他源，全部 fetch 失败不提交；archive 或 adapter 契约错误不降级。跨进程 mock 验证恢复两个 source cursor 后继续成功，HTTP 不暴露嵌套 cursor，`PASS=133 FAIL=0`。B 站热门没有被别名成尚不存在的个性化推荐。
+- 2026-08-15 / B 站个性化推荐 continuation / 新增独立 `bilibili-main-recommend`，在已登录页面上下文调用首页个性化推荐 API，只持久化经结构校验的四个 fresh counters，不保存 WBI 签名、认证 header 或 `last_showlist`。cursor 绑定 capability 并校验 `(n,n,n,3n+1)` 序列；mockup 不再把热门别名成推荐。受限真实只读 probe 取得 10→9 个有效 BVID、相邻页重叠 0，cursor 正确推进，未打开 Refresh 数据库。
+
+- 2026-08-15 / 确定性跨源 FeedSession / `POST /feedsessions` 新增互斥的显式 `sources` 输入；FeedSession Status 保存各源 O(1) cursor，AggregateFeedPage 保存最终发布顺序，FeedSourcePage 强关联 session / aggregate page / 独立 RefreshWindow 并保留完整 source membership。v1 ranker 按请求 source 顺序 round-robin，单源 fetch 失败不推进其 cursor 且不阻断其他源，全部 fetch 失败不提交；archive 或 adapter 契约错误不降级。跨进程 mock 验证恢复两个 source cursor 后继续成功，HTTP 不暴露嵌套 cursor，`PASS=133 FAIL=0`。B 站热门没有被别名成个性化推荐。
 
 - 2026-08-15 / FeedSession 十万量级顺序模型 / 受限 litectl V2 基准显示，把 100k refs 放进可变 Status 会在每次追加时重写 2.30 MiB JSON，中位数 160.7ms，并让数据库增长 5.18 MiB；因此删除 `orderedMessageRefs`，改为按 `page-of` 强 link 读取 immutable FeedPage、按 ordinal 校验并以首次出现规则派生顺序。100k refs / 5,000 pages 的完整读取与派生中位数 56.6ms，不在写入时复制历史。SQL 只在 ResourceStore facade 的通用 link 查询内，业务 service 保持 typed page 抽象；118 项受限验收全绿。
 

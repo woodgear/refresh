@@ -60,7 +60,7 @@ Reference fields are public names at the service boundary. The ResourceStore fac
 
 ## Source Selection
 
-Aggregate sources are explicit API input. No default aliases Bilibili popular to personalized recommend, and no aggregate silently mixes recommend and follow capabilities. A product-level default can be registered after Bilibili personalized recommendation has a real source.
+Aggregate sources are explicit API input. No default aliases Bilibili popular to personalized recommend, and no aggregate silently mixes recommend and follow capabilities. The product-level default is the ordered recommendation list exported by `server/config.ts`; the API still receives that list explicitly from its consumer.
 
 ## Stop Condition
 
