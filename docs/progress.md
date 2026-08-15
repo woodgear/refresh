@@ -46,6 +46,8 @@ verify.sh 全绿（A1-A4, A6, A9）且 A5/A7/A8 均为 [A] awaiting-user → loo
 
 ## 迭代日志（续）
 
+- 2026-08-15 / 知乎真实 continuation / recommend/follow 共用纯分页遍历器与 CDP loader，持久化经校验的 `paging.next` 相对 URL；cursor 绑定 capability，拒绝外部 origin、错误 API path 和损坏结构。广告过滤与 feed_group 拆分由新旧抓取共用，完整上游页不截断。受限真实只读 probe：recommend 6→6、follow 14→18，head/next 规范化 ref 重叠均为 0，未写数据库。
+
 - 2026-08-15 / B 站真实 continuation / 将 B 站 CDP adapter 拆为纯分页遍历器与页面上下文 loader，follow cursor 持久化 offset，popular cursor 持久化下一页号；逻辑 page 始终保留完整上游页，`count` 是目标量而非截断上限，避免游标推进后丢弃页尾。损坏/跨 capability cursor 明确失败，旧 RefreshWindow fetch 仍保持 count 上限。受限真实只读 probe：follow 21→20、popular 20→20，head/next 规范化 ref 重叠均为 0，未写数据库。
 
 - 2026-08-15 / FeedSession 单 source continuation / 在 litectl V2 ResourceStore 上新增 `FeedSession` + 独立 Status、不可变 `FeedPage`，由声明式 reference 自动物化 `page-of` / `page-window` link。新增 restart/page/messages API，平台 cursor 不出 HTTP；fetch/archive 失败不推进状态，跨页去重但保留完整 page membership，同 session 并发请求明确拒绝。mock 纵切跨进程重启后继续成功，真实平台 adapter 暂明确返回 501。受限 verify `PASS=118 FAIL=0`，CPU 3.524s、峰值 210.3MiB。

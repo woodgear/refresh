@@ -199,14 +199,15 @@ class CdpContinuationFetcher implements ContinuationFetcher {
     cursor: string | null,
     log: (line: string) => void,
   ): Promise<FetchPageResult> {
-    if (source.platform !== 'bilibili') {
-      throw new ContinuationUnsupportedError(`continuation is not implemented for source: ${source.name}`)
+    if (source.platform === 'bilibili' && (source.capability === 'follow' || source.capability === 'popular')) {
+      const { fetchBilibiliPage } = await import('./cdp-bilibili')
+      return fetchBilibiliPage(source.capability, count, cursor, log)
     }
-    if (source.capability !== 'follow' && source.capability !== 'popular') {
-      throw new ContinuationUnsupportedError(`continuation is not implemented for source: ${source.name}`)
+    if (source.platform === 'zhihu' && (source.capability === 'recommend' || source.capability === 'follow')) {
+      const { fetchZhihuPage } = await import('./cdp-zhihu')
+      return fetchZhihuPage(source.capability, count, cursor, log)
     }
-    const { fetchBilibiliPage } = await import('./cdp-bilibili')
-    return fetchBilibiliPage(source.capability, count, cursor, log)
+    throw new ContinuationUnsupportedError(`continuation is not implemented for source: ${source.name}`)
   }
 }
 

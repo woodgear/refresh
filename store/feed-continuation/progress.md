@@ -16,7 +16,9 @@
 - Added real Bilibili continuation without changing the storage boundary: `follow` persists the API offset and `popular` persists the next page number in a versioned, capability-bound cursor.
 - Split Bilibili traversal from its CDP loader so complete-page and cursor behavior is covered without browser mocks. The old one-shot fetch still slices to its requested count; continuation never truncates an upstream page.
 - Constrained read-only real probes passed without database writes: follow returned 21 then 20 normalized refs, popular returned 20 then 20, and both head/next pairs had zero overlap.
-- Zhihu and Twitter remain explicit `501 Not Implemented`; Bilibili follow/popular now route through the real `CdpContinuationFetcher`.
+- Added real Zhihu recommend/follow continuation. The adapter stores a normalized `paging.next` path only after validating the Zhihu origin, capability-specific API path, and versioned cursor shape.
+- Constrained read-only real probes passed without database writes: recommend returned 6 then 6 normalized refs, follow returned 14 then 18, and both head/next pairs had zero overlap.
+- Twitter is now the only registered platform that remains explicit `501 Not Implemented` for FeedSession APIs.
 
 ## Stop Evidence
 
