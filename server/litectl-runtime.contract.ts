@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, rmSync } from 'fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { Database } from 'bun:sqlite'
@@ -440,10 +440,17 @@ describe('Refresh custom ResourceStore migration contract', () => {
   const sourcePath = join(directory, 'legacy.db')
   const targetPath = join(directory, 'litectl.db')
   const inPlacePath = join(directory, 'legacy-in-place.db')
+  const failedInPlacePath = join(directory, 'legacy-failed-in-place.db')
 
   beforeAll(() => {
     createLegacyFixture(sourcePath)
     createLegacyFixture(inPlacePath)
+    createLegacyFixture(failedInPlacePath)
+    const failed = new Database(failedInPlacePath, { strict: true })
+    failed
+      .query('UPDATE resources SET metadata = ? WHERE kind = ? AND name = ?')
+      .run(JSON.stringify({ name: 'wrong-name' }), 'Message', 'twitter-legacy')
+    failed.close()
   })
   afterAll(() => rmSync(directory, { recursive: true }))
 
@@ -465,6 +472,17 @@ describe('Refresh custom ResourceStore migration contract', () => {
     expect(existsSync(result.backupPath)).toBe(true)
     expect(detectRefreshDatabaseFormat(result.backupPath)).toBe('custom-resource-store')
     expect(detectRefreshDatabaseFormat(inPlacePath)).toBe('litectl-v2')
+  })
+
+  test('leaves the source byte-identical and removes migration artifacts when conversion fails', () => {
+    const before = readFileSync(failedInPlacePath)
+    expect(() => migrateCustomResourceStoreInPlace(failedInPlacePath, extensionPath)).toThrow(
+      'Message/twitter-legacy metadata.name does not match row name',
+    )
+    expect(readFileSync(failedInPlacePath).equals(before)).toBe(true)
+    expect(detectRefreshDatabaseFormat(failedInPlacePath)).toBe('custom-resource-store')
+    expect(existsSync(`${failedInPlacePath}.pre-litectl-v2.sqlite`)).toBe(false)
+    expect(existsSync(`${failedInPlacePath}.litectl-v2.tmp`)).toBe(false)
   })
 })
 

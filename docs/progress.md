@@ -46,6 +46,8 @@ verify.sh 全绿（A1-A4, A6, A9）且 A5/A7/A8 均为 [A] awaiting-user → loo
 
 ## 迭代日志（续）
 
+- 2026-08-15 / litectl V2 完成审计 / 补充“已创建 backup 后转换失败”的契约，要求旧库逐字节不变且清理 backup/tmp；受限复跑 litectl V1→V2 并发迁移、备份、生命周期/事件对账和只读 gate 全绿。Refresh 受限完整链为 30 unit / 104 断言、11 litectl contracts / 34 断言、类型检查、生产构建、`PASS=140 FAIL=0`，峰值 522.8MiB。迁移 commit 的业务 service/API 为零 diff，永久存储代码净增约 63 行但移除了等价自研 DDL/版本/索引/校验/写队列，没有触发复杂度停止条件。
+
 - 2026-08-15 / litectl V2 生产切换准备 / 确认生产 `refresh.service` 直接监听 13002，当前 PATH 命中 `/usr/local/bin/litectl`；内存扩展探针证明系统制品仍创建 format 1，而 Maid 已验证制品创建 format 2，因此当前禁止直接重启。unit 显式固定 `LITECTL_BIN=/usr/local/bin/litectl`，Refresh 文档记录自动迁移与复杂度停止条件，实际二进制发布、停机迁移和回滚步骤由 devops SQLite 运维文档负责。真实数据库未修改。
 
 - 2026-08-15 / 真实 FeedSession UI / React 首页不再查询 `/messages?limit=200` 作为 feed：`all` 显式创建知乎/Twitter/B站推荐聚合 generation，单 source 各自复用 session；本地分页耗尽后才触发平台 continuation，失败保留列表并可重试，重开创建新 generation。浏览器只持久化 session name 与 `{messageName, offset}`，硬刷新直接读取非零 offset 的有界窗口并恢复同一首个可见 Message；连续 feed 移除会破坏发布顺序的时间/未读重排。新增真实 updates API，以 source membership、未发布集合和 lastSeen RefreshWindow 时间计算。隔离 CDP 验证 StrictMode 单创建、触底、复用、重开及 390px 无溢出；30 unit、10 litectl contracts、受限 `PASS=140 FAIL=0`。

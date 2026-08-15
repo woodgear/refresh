@@ -49,6 +49,9 @@ No stop condition was triggered. The raw-number drift was fixed in litectl itsel
 - A read-only in-memory extension probe showed that `/usr/local/bin/litectl` creates format 1, while the reviewed Maid artifact creates format 2. Restarting the V2 Refresh code before publishing the V2 binary is therefore forbidden and would fail at the startup gate before touching the database.
 - Added the authoritative binary publication, service cutover, acceptance, and database rollback checklist to the devops SQLite operations document. No binary, service, or production database was changed while preparing it.
 - The real database remains the exact custom ResourceStore schema, passes `PRAGMA integrity_check`, and has no migration backup or temporary target yet.
+- Added a failed in-place migration contract that creates the backup, then rejects an invalid public envelope. It proves the source file remains byte-identical and both backup and temporary V2 artifacts are removed when conversion fails.
+- Re-ran the V1-to-V2 evidence under `CPUQuota=100%`, `MemoryMax=2G`, and `TasksMax=64`: four Rust format tests and the Go writer suite passed, including concurrent migration, backup, lifecycle/event reconciliation, and the read-only migration gate.
+- Re-ran the complete Refresh acceptance chain under the same limits: 30 unit tests (104 assertions), 11 litectl contracts (34 assertions), typecheck, production build, and `PASS=140 FAIL=0`; peak memory was 522.8 MiB.
 
 ## Continuation Follow-through
 
