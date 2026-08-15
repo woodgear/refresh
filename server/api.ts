@@ -32,6 +32,7 @@ import {
   publicFeedPage,
   publicFeedSession,
   isAggregateFeedSession,
+  paginateFeedMessageRefs,
 } from './feed-sessions'
 import {
   defaultAggregateFeedSessionService,
@@ -496,17 +497,26 @@ apiV1.post('/feedsessions', async c => {
 apiV1.get('/feedsessions/:name/messages', async c => {
   try {
     const sessionName = c.req.param('name')
+    const offset = Number(c.req.query('offset') ?? 0)
+    const limit = Number(c.req.query('limit') ?? 50)
     const session = await defaultFeedSessionService().get(sessionName)
     const messageRefs = isAggregateFeedSession(session)
       ? await defaultAggregateFeedSessionService().messageRefs(sessionName, session)
       : await defaultFeedSessionService().messageRefs(sessionName)
+    const page = paginateFeedMessageRefs(messageRefs, offset, limit)
     const items = []
-    for (const name of messageRefs) {
+    for (const name of page.messageRefs) {
       const message = await getMessage(name)
       if (!message) throw new Error(`FeedSession/${sessionName} references missing Message/${name}`)
       items.push(message)
     }
-    return c.json(list('Message', items))
+    return c.json({
+      ...list('Message', items),
+      total: page.total,
+      offset: page.offset,
+      limit: page.limit,
+      nextOffset: page.nextOffset,
+    })
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, feedSessionErrorStatus(err))
   }

@@ -14,7 +14,7 @@
 pnpm install
 pnpm start        # 后端(bun, :3001) + 前端(vite, :5173)，均监听 0.0.0.0
 pnpm server       # 仅后端
-./verify.sh       # 验收冒烟（133 断言，全 mock 隔离环境，~25s）——改完必跑，全绿才算完
+./verify.sh       # 验收冒烟（139 断言，全 mock 隔离环境，~25s）——改完必跑，全绿才算完
 bunx tsc --noEmit # 类型检查（vite build 不做类型检查）
 ```
 
@@ -91,7 +91,7 @@ GET   /api/v1/accounts[/{name}?check=1]  # check=1 现场检测登录态
 POST  /api/v1/loginsessions  GET /loginsessions/{id}[/qr]  POST /loginsessions/{id}/input
 POST  /api/v1/refreshwindows  GET /refreshwindows/{name}[?watch=1]   # watch=SSE
 POST  /api/v1/feedsessions  GET /feedsessions[/{name}]
-POST  /api/v1/feedsessions/{name}/pages  GET /feedsessions/{name}/messages
+POST  /api/v1/feedsessions/{name}/pages  GET /feedsessions/{name}/messages?offset=&limit=
 GET|PATCH /api/v1/scheduler              # 单例：{spec:{enabled,intervalMs}}
 GET   /api/v1/logs?date=&lines=          # 日志 tail
 GET   /api/v1/media/{hash}  /api/v1/media-proxy?url=

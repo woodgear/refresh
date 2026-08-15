@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import type { SourceConfig } from './config'
 import {
   FeedSessionService,
+  paginateFeedMessageRefs,
   publicFeedSession,
   type FeedPageArchive,
   type FeedPageArchiver,
@@ -182,4 +183,28 @@ test('one session rejects overlapping page requests', async () => {
   )
   release()
   await pending
+})
+
+test('message pagination is stable when new pages append', () => {
+  const first = paginateFeedMessageRefs(['a', 'b', 'c'], 1, 2)
+  expect(first).toEqual({
+    messageRefs: ['b', 'c'],
+    total: 3,
+    offset: 1,
+    limit: 2,
+    nextOffset: null,
+  })
+
+  const afterAppend = paginateFeedMessageRefs(['a', 'b', 'c', 'd'], 1, 2)
+  expect(afterAppend.messageRefs).toEqual(['b', 'c'])
+  expect(afterAppend.nextOffset).toBe(3)
+})
+
+test('message pagination rejects invalid ranges', () => {
+  expect(() => paginateFeedMessageRefs([], -1, 20)).toThrow(
+    'feed message offset must be a non-negative integer: -1',
+  )
+  expect(() => paginateFeedMessageRefs([], 0, 201)).toThrow(
+    'feed message limit must be an integer from 1 to 200: 201',
+  )
 })

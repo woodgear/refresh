@@ -105,6 +105,14 @@ export class FeedSessionExhaustedError extends Error {}
 export class FeedSessionInputError extends Error {}
 export class FeedPageFetchError extends Error {}
 
+export interface FeedMessagePage {
+  messageRefs: string[]
+  total: number
+  offset: number
+  limit: number
+  nextOffset: number | null
+}
+
 export class FeedSessionService {
   private readonly inFlight = new Set<string>()
 
@@ -415,4 +423,27 @@ export function validateFetchPageResult(result: FetchPageResult, source: string)
 
 export function isAggregateFeedSession(session: FeedSessionResource): session is AggregateFeedSessionResource {
   return session.spec.source === 'aggregate'
+}
+
+export function paginateFeedMessageRefs(
+  messageRefs: string[],
+  requestedOffset: number,
+  requestedLimit: number,
+): FeedMessagePage {
+  if (!Number.isInteger(requestedOffset) || requestedOffset < 0) {
+    throw new FeedSessionInputError(`feed message offset must be a non-negative integer: ${requestedOffset}`)
+  }
+  if (!Number.isInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 200) {
+    throw new FeedSessionInputError(`feed message limit must be an integer from 1 to 200: ${requestedLimit}`)
+  }
+  const total = messageRefs.length
+  const messagePage = messageRefs.slice(requestedOffset, requestedOffset + requestedLimit)
+  const consumed = requestedOffset + messagePage.length
+  return {
+    messageRefs: messagePage,
+    total,
+    offset: requestedOffset,
+    limit: requestedLimit,
+    nextOffset: consumed < total ? consumed : null,
+  }
 }

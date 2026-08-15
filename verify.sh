@@ -226,6 +226,11 @@ assert_eq "1" "$(echo "$FEED" | jq -r .session.status.pageCount)" "restart 创�
 assert_eq "false" "$(echo "$FEED" | jq -r '.session.status | has("nextCursor")')" "FeedSession API 隐藏平台 cursor"
 assert_eq "false" "$(echo "$FEED" | jq -r '.page.spec | has("inputCursor") or has("outputCursor")')" "FeedPage API 隐藏平台 cursor"
 assert_eq "3" "$(curl -s "$BASE/feedsessions/$FEED_NAME/messages" | jq '.items | length')" "第一页保持发布顺序"
+FEED_MESSAGE_PAGE=$(curl -s "$BASE/feedsessions/$FEED_NAME/messages?offset=0&limit=2")
+assert_eq "2" "$(echo "$FEED_MESSAGE_PAGE" | jq '.items | length')" "FeedSession messages 限制响应批次"
+assert_eq "3" "$(echo "$FEED_MESSAGE_PAGE" | jq -r .total)" "FeedSession messages 返回总数"
+assert_eq "2" "$(echo "$FEED_MESSAGE_PAGE" | jq -r .nextOffset)" "FeedSession messages 返回下一稳定 offset"
+assert_eq "400" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/feedsessions/$FEED_NAME/messages?offset=-1")" "FeedSession messages 拒绝非法 offset"
 assert_eq "2" "$(sqlite3 "$TMPDIR/refresh.db" "select count(*) from resource_links where relation in ('page-of','page-window');")" "FeedPage 物化 session/window links"
 
 log "== Aggregate FeedSession: 显式 sources、确定性排序、cursor 不出 API =="
@@ -312,6 +317,9 @@ assert_eq "2" "$(echo "$FEED_NEXT" | jq -r .session.status.pageCount)" "重启�
 assert_eq "$FEED_CREATED" "$(echo "$FEED_NEXT" | jq -r .session.metadata.creationTimestamp)" "continuation 保留 session 创建时间"
 assert_eq "false" "$(echo "$FEED_NEXT" | jq -r '.session.status | has("nextCursor")')" "continue 响应隐藏平台 cursor"
 assert_eq "4" "$(curl -s "$BASE/feedsessions/$FEED_NAME/messages" | jq '.items | length')" "第二页原位追加且跨页去重"
+FEED_MESSAGE_TAIL=$(curl -s "$BASE/feedsessions/$FEED_NAME/messages?offset=2&limit=2")
+assert_eq "2" "$(echo "$FEED_MESSAGE_TAIL" | jq '.items | length')" "追加后旧 offset 稳定读取尾部"
+assert_eq "null" "$(echo "$FEED_MESSAGE_TAIL" | jq -r .nextOffset)" "FeedSession messages 明确到达本地尾部"
 assert_eq "7" "$(curl -s "$BASE/messages" | jq '.items | length')" "第二页新 Message 进入全局归档"
 assert_eq "409" "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/feedsessions/$FEED_NAME/pages" -d '{}')" "耗尽 session 明确拒绝继续"
 assert_eq "4" "$(sqlite3 "$TMPDIR/refresh.db" "select count(*) from resource_links link join resources page on page.id=link.from_id where page.kind='feed-page' and relation in ('page-of','page-window');")" "两页共四条强 link"

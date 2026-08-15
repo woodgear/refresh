@@ -74,7 +74,7 @@ Refresh 最终不是单个平台的阅读器，而是所有个人信息流的统
 
 - `GET /messages` 只有 `limit`，没有稳定的 cursor/offset 响应契约。
 - B 站热门与登录用户首页个性化推荐分别注册为 `bilibili-main-popular` 和 `bilibili-main-recommend`，不互相别名。
-- session message API 当前仍返回完整已发布结果，UI 接入时需要增加稳定的局部分页读取，避免长 session 传输全部历史。
+- session message API 已支持稳定的 append-only `offset + limit` 局部分页，并返回 `total` / `nextOffset`；单次响应不再传输全部历史。
 
 ## 5. 目标架构
 

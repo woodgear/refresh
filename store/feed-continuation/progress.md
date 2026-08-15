@@ -25,6 +25,8 @@
 - Added the distinct `bilibili-main-recommend` source using the logged-in homepage recommendation endpoint. Its versioned cursor persists only the four observed fresh counters and validates their progression invariant; WBI signatures, request headers, and `last_showlist` are never persisted.
 - A constrained read-only production-adapter probe returned 10 then 9 valid BVID items with zero overlap. The cursor advanced from `(1,1,1,4)` through `(2,2,2,7)` to `(3,3,3,10)` without opening the Refresh database.
 - Final validation passed 26 unit tests, 10 litectl contracts, TypeScript, the production build, and the constrained end-to-end suite with `PASS=133 FAIL=0`.
+- Added stable append-only offset pagination to FeedSession message reads. The response is bounded to 200 Messages and exposes `total` plus `nextOffset`; published-order derivation remains the measured typed-page path and does not add a litectl query abstraction.
+- The paginated API passed the constrained end-to-end suite with `PASS=139 FAIL=0`, including reuse of a pre-append offset after a process restart and continuation commit.
 
 ## Stop Evidence
 
