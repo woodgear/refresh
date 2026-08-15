@@ -12,6 +12,7 @@ import {
 } from './litectl-runtime'
 import {
   getRefreshResource,
+  listRefreshResourcesLinkedTo,
   putRefreshResource,
   registerRefreshLitectlKinds,
 } from './litectl-resource-facade'
@@ -251,7 +252,6 @@ describe('Refresh resource facade contract', () => {
       status: {
         nextCursor: 'cursor-1',
         hasMore: true,
-        orderedMessageRefs: ['twitter-2'],
         pageCount: 1,
         lastPage: 'feed-1-000000',
         lastWindow: 'feed-window-1',
@@ -283,6 +283,13 @@ describe('Refresh resource facade contract', () => {
 
     expect(getRefreshResource(database, FeedSessionResource, session.metadata.name)).toEqual(session)
     expect(getRefreshResource(database, FeedPageResource, page.metadata.name)).toEqual(page)
+    expect(listRefreshResourcesLinkedTo(
+      database,
+      FeedPageResource,
+      'page-of',
+      FeedSessionResource,
+      session.metadata.name,
+    )).toEqual([page])
     const links = database.query<{ relation: string }, []>(
       `SELECT link.relation
          FROM resource_links link
@@ -304,7 +311,6 @@ describe('Refresh resource facade contract', () => {
         status: {
           nextCursor: null,
           hasMore: false,
-          orderedMessageRefs: [],
           pageCount: 0,
           lastPage: '',
           lastWindow: '',

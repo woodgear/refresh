@@ -46,6 +46,8 @@ verify.sh 全绿（A1-A4, A6, A9）且 A5/A7/A8 均为 [A] awaiting-user → loo
 
 ## 迭代日志（续）
 
+- 2026-08-15 / FeedSession 十万量级顺序模型 / 受限 litectl V2 基准显示，把 100k refs 放进可变 Status 会在每次追加时重写 2.30 MiB JSON，中位数 160.7ms，并让数据库增长 5.18 MiB；因此删除 `orderedMessageRefs`，改为按 `page-of` 强 link 读取 immutable FeedPage、按 ordinal 校验并以首次出现规则派生顺序。100k refs / 5,000 pages 的完整读取与派生中位数 56.6ms，不在写入时复制历史。SQL 只在 ResourceStore facade 的通用 link 查询内，业务 service 保持 typed page 抽象；118 项受限验收全绿。
+
 - 2026-08-15 / Twitter 真实 continuation / 替换不可跨进程恢复的 DOM 滚动采集：每次打开 x.com 后捕获当前 HomeTimeline/HomeLatestTimeline GraphQL GET 或 POST 模板，在同 tab 内注入持久化 bottom cursor 重放；临时 authorization/CSRF/transaction headers 不落盘。纯 payload 遍历器覆盖完整响应、跨响应去重、capability 绑定和损坏 payload；旧 RefreshWindow fetch 保持 count 上限。受限真实只读 probe：recommend 35→35（重叠 0），following 42→40（平台重复 2，session 发布层去重），均产生后续 cursor，未写数据库。
 
 - 2026-08-15 / 知乎真实 continuation / recommend/follow 共用纯分页遍历器与 CDP loader，持久化经校验的 `paging.next` 相对 URL；cursor 绑定 capability，拒绝外部 origin、错误 API path 和损坏结构。广告过滤与 feed_group 拆分由新旧抓取共用，完整上游页不截断。受限真实只读 probe：recommend 6→6、follow 14→18，head/next 规范化 ref 重叠均为 0，未写数据库。

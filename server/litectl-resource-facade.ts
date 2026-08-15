@@ -67,12 +67,24 @@ export function getRefreshResource(
   definition: ResourceDefinition,
   name: string,
 ): Resource | null {
-  const rows = readRows(database, definition, name)
+  const rows = readRows(database, definition, { name })
   return rows.length === 0 ? null : fromStorageResource(definition, rows[0])
 }
 
 export function listRefreshResources(database: Database, definition: ResourceDefinition): Resource[] {
   return readRows(database, definition).map(row => fromStorageResource(definition, row))
+}
+
+export function listRefreshResourcesLinkedTo(
+  database: Database,
+  definition: ResourceDefinition,
+  relation: string,
+  targetDefinition: ResourceDefinition,
+  targetName: string,
+): Resource[] {
+  return readRows(database, definition, {
+    linkTarget: { relation, definition: targetDefinition, name: targetName },
+  }).map(row => fromStorageResource(definition, row))
 }
 
 function applyRefreshResource(database: Database, resource: Resource): void {
@@ -210,9 +222,28 @@ function fromStorageResource(definition: ResourceDefinition, row: ResourceRow): 
   }
 }
 
-function readRows(database: Database, definition: ResourceDefinition, name?: string): ResourceRow[] {
+function readRows(
+  database: Database,
+  definition: ResourceDefinition,
+  selector: {
+    name?: string
+    linkTarget?: { relation: string; definition: ResourceDefinition; name: string }
+  } = {},
+): ResourceRow[] {
   const statusKind = definition.statusStorageKind ?? ''
-  const namePredicate = name === undefined ? '' : 'AND subject.name = ?'
+  const namePredicate = selector.name === undefined ? '' : 'AND subject.name = ?'
+  const linkPredicate = selector.linkTarget === undefined
+    ? ''
+    : `AND EXISTS (
+         SELECT 1
+           FROM resource_links selected_link
+           JOIN resources selected_target ON selected_target.id = selected_link.to_id
+          WHERE selected_link.from_id = subject.id
+            AND selected_link.relation = ?
+            AND selected_target.api_version = ?
+            AND selected_target.kind = ?
+            AND selected_target.name = ?
+       )`
   return database
     .query<ResourceRow, string[]>(
       `SELECT subject.api_version,
@@ -234,6 +265,7 @@ function readRows(database: Database, definition: ResourceDefinition, name?: str
         WHERE subject.api_version = ?
           AND subject.kind = ?
           ${namePredicate}
+          ${linkPredicate}
         ORDER BY subject.name`,
     )
     .all(
@@ -242,7 +274,15 @@ function readRows(database: Database, definition: ResourceDefinition, name?: str
       STATUS_CONTROLLER,
       definition.apiVersion,
       definition.storageKind,
-      ...(name === undefined ? [] : [name]),
+      ...(selector.name === undefined ? [] : [selector.name]),
+      ...(selector.linkTarget === undefined
+        ? []
+        : [
+            selector.linkTarget.relation,
+            selector.linkTarget.definition.apiVersion,
+            selector.linkTarget.definition.storageKind,
+            selector.linkTarget.name,
+          ]),
     )
 }
 

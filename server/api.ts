@@ -470,11 +470,12 @@ apiV1.post('/feedsessions', async c => {
 
 apiV1.get('/feedsessions/:name/messages', async c => {
   try {
-    const session = await defaultFeedSessionService().get(c.req.param('name'))
+    const sessionName = c.req.param('name')
+    const messageRefs = await defaultFeedSessionService().messageRefs(sessionName)
     const items = []
-    for (const name of session.status.orderedMessageRefs) {
+    for (const name of messageRefs) {
       const message = await getMessage(name)
-      if (!message) throw new Error(`FeedSession/${session.metadata.name} references missing Message/${name}`)
+      if (!message) throw new Error(`FeedSession/${sessionName} references missing Message/${name}`)
       items.push(message)
     }
     return c.json(list('Message', items))

@@ -29,4 +29,8 @@ No stop condition was triggered. Subject/Status splitting, UID resolution, link 
 
 ## Scale Gate
 
-`FeedSession.status.orderedMessageRefs` is rewritten when a page commits. Before implementing long-lived aggregate sessions, benchmark this shape at the intended session length. If rewrite cost becomes material, derive order from immutable FeedPages or add a purpose-built ordered membership resource; do not add raw SQL to the business service.
+Resolved before aggregate sessions. A constrained litectl V2 benchmark measured full Status rewrites at 1k, 10k, and 100k refs. The 100k shape was 2.30 MiB of JSON, took 160.7ms median per write, and grew the database by 5.18 MiB per write. This is material and would copy the full browsing history on every appended page.
+
+`orderedMessageRefs` was removed from mutable FeedSession Status. Published order is now derived from immutable FeedPages selected through their declarative `page-of` links, sorted by ordinal, and deduplicated at first occurrence. A second constrained benchmark with 100k refs across 5,000 pages measured 56.6ms median for link query, decoding, validation, and derivation; the complete three-size fixture occupied 14.6 MiB. The generic link query remains inside the ResourceStore facade, while FeedSession business code receives typed pages and contains no SQL or litectl concepts.
+
+The derived-order change passed 18 unit tests, 9 litectl contracts, TypeScript, the production build, and all 118 constrained end-to-end assertions. The final run used 3.582s CPU and 210.6 MiB peak memory over 23.271s wall time.

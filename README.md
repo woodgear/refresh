@@ -106,6 +106,7 @@ POST /api/v1/feedsessions/{name}/pages
 ```
 
 客户端按 session 名继续，不接触平台原始 cursor。当前注册的知乎、B 站和 Twitter source 均已支持真实 continuation；未来未实现的平台或 capability 会明确返回 `501`，不会退化成从头抓取。
+FeedSession 只保存 O(1) continuation 状态；消息顺序由关联的不可变 FeedPage 按 ordinal 派生，避免长 session 在每次追加时重写全部历史。
 
 ## 部署
 

@@ -15,6 +15,7 @@ import {
   appendWindow,
   commitFeedPage,
   getStoredResource,
+  listFeedPages,
   listStoredResources,
   type Resource,
   type WindowFile,
@@ -28,7 +29,6 @@ export interface FeedSessionSpec {
 export interface FeedSessionStatus {
   nextCursor: string | null
   hasMore: boolean
-  orderedMessageRefs: string[]
   pageCount: number
   lastPage: string
   lastWindow: string
@@ -67,6 +67,7 @@ export interface FeedPageArchiver {
 export interface FeedSessionRepository {
   get(name: string): Promise<FeedSessionResource | null>
   list(): Promise<FeedSessionResource[]>
+  listPages(name: string): Promise<FeedPageResource[]>
   commit(session: FeedSessionResource, page: FeedPageResource): Promise<void>
 }
 
@@ -150,6 +151,12 @@ export class FeedSessionService {
     return this.repository.list()
   }
 
+  async messageRefs(name: string): Promise<string[]> {
+    const session = await this.get(name)
+    const pages = await this.repository.listPages(name)
+    return derivePublishedMessageRefs(session, pages)
+  }
+
   private async fetchHead(source: SourceConfig, count: number, sessionName: string): Promise<FetchPageResult> {
     try {
       return await this.fetcher.fetchHead(source, count, line => this.log(sessionName, line))
@@ -203,7 +210,6 @@ export class FeedSessionService {
       },
       status: {},
     }
-    const orderedMessageRefs = appendUnique(previous?.status.orderedMessageRefs ?? [], archive.messageRefs)
     const session: FeedSessionResource = {
       apiVersion: 'radar/v1',
       kind: 'FeedSession',
@@ -216,7 +222,6 @@ export class FeedSessionService {
       status: {
         nextCursor: input.result.nextCursor,
         hasMore: input.result.hasMore,
-        orderedMessageRefs,
         pageCount: input.ordinal + 1,
         lastPage: pageName,
         lastWindow: archive.windowName,
@@ -234,6 +239,10 @@ class StoredFeedSessionRepository implements FeedSessionRepository {
 
   async list(): Promise<FeedSessionResource[]> {
     return await listStoredResources(FeedSessionDefinition) as FeedSessionResource[]
+  }
+
+  async listPages(name: string): Promise<FeedPageResource[]> {
+    return await listFeedPages(name) as FeedPageResource[]
   }
 
   async commit(session: FeedSessionResource, page: FeedPageResource): Promise<void> {
@@ -297,13 +306,47 @@ export function defaultFeedSessionService(): FeedSessionService {
 }
 
 export function publicFeedSession(session: FeedSessionResource): Resource {
-  const { nextCursor: _nextCursor, ...status } = session.status
-  return { ...session, status }
+  return {
+    ...session,
+    status: {
+      hasMore: session.status.hasMore,
+      pageCount: session.status.pageCount,
+      lastPage: session.status.lastPage,
+      lastWindow: session.status.lastWindow,
+    },
+  }
 }
 
 export function publicFeedPage(page: FeedPageResource): Resource {
   const { inputCursor: _inputCursor, outputCursor: _outputCursor, ...spec } = page.spec
   return { ...page, spec }
+}
+
+export function derivePublishedMessageRefs(
+  session: FeedSessionResource,
+  pages: FeedPageResource[],
+): string[] {
+  pages.sort((left, right) => left.spec.ordinal - right.spec.ordinal)
+  if (pages.length !== session.status.pageCount) {
+    throw new Error(
+      `FeedSession/${session.metadata.name} page count mismatch: status=${session.status.pageCount}, stored=${pages.length}`,
+    )
+  }
+  const ordered: string[] = []
+  const seen = new Set<string>()
+  pages.forEach((page, ordinal) => {
+    if (page.spec.session !== session.metadata.name || page.spec.ordinal !== ordinal) {
+      throw new Error(
+        `FeedSession/${session.metadata.name} has invalid FeedPage ordinal ${page.spec.ordinal} at index ${ordinal}`,
+      )
+    }
+    for (const messageRef of page.spec.messageRefs) {
+      if (seen.has(messageRef)) continue
+      seen.add(messageRef)
+      ordered.push(messageRef)
+    }
+  })
+  return ordered
 }
 
 function pageSize(value: number): number {
@@ -317,15 +360,4 @@ function validateFetchResult(result: FetchPageResult, source: string): void {
   if (result.hasMore !== (result.nextCursor !== null)) {
     throw new Error(`continuation fetcher returned inconsistent cursor state for ${source}`)
   }
-}
-
-function appendUnique(existing: readonly string[], incoming: readonly string[]): string[] {
-  const result = [...existing]
-  const seen = new Set(existing)
-  for (const name of incoming) {
-    if (seen.has(name)) continue
-    seen.add(name)
-    result.push(name)
-  }
-  return result
 }

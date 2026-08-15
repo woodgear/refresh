@@ -20,6 +20,7 @@ import {
   putResource as resourcePutResource,
   getResource as resourceGetResource,
   listResources as resourceListResources,
+  listFeedPagesInStore as resourceListFeedPages,
 } from './resource-store'
 import { FolloweeWindowResource, RefreshWindowResource, type ResourceDefinition } from './resource-definitions'
 
@@ -210,4 +211,9 @@ export async function getStoredResource(definition: ResourceDefinition, name: st
 export async function listStoredResources(definition: ResourceDefinition): Promise<Resource[]> {
   await ensureDirs()
   return resourceListResources(definition)
+}
+
+export async function listFeedPages(sessionName: string): Promise<Resource[]> {
+  await ensureDirs()
+  return resourceListFeedPages(sessionName)
 }

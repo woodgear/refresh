@@ -58,13 +58,13 @@ Refresh 最终不是单个平台的阅读器，而是所有个人信息流的统
 现有架构已经完成以下 continuation 地基：
 
 - `POST /api/v1/feedsessions` 创建 generation 和第一页；`POST /feedsessions/{name}/pages` 从已提交 cursor 继续。
-- `FeedSession` 保存已发布顺序与 cursor，`FeedPage` 保存不可变 page 审计记录并强关联 session/window。
+- `FeedSession` 保存 O(1) cursor/page 状态，`FeedPage` 保存不可变 page 审计记录并强关联 session/window；已发布顺序按 page ordinal 和首次出现规则派生。
 - 每页都归档为不可变 `RefreshWindow`，Message 继续全局去重。
 - session/page 的最终状态转换在一个 litectl 调用方事务内提交；fetch 或 archive 失败不推进 cursor。
 - 服务重启后能恢复 session 并继续；同一 session 的并发 page 请求明确返回冲突。
 - 平台 cursor 只保存在内部资源表示，FeedSession、FeedPage HTTP 响应均不返回 cursor。
 - source 已按 `account × capability` 注册。
-- 知乎 fetcher 会跟随 `paging.next`；B 站关注流会跟随 `offset`；B 站热门使用页码；Twitter 会滚动页面触发更多 GraphQL 响应。
+- 知乎 fetcher 会跟随 `paging.next`；B 站关注流会跟随 `offset`；B 站热门使用页码；Twitter 使用 HomeTimeline bottom cursor。
 
 当前 API 纵切接入了确定性 mock、知乎 `paging.next` URL、B 站关注流 offset / 热门流页码，以及 Twitter HomeTimeline bottom cursor。真实 adapter 的逻辑页把 `count` 视为目标数量并保留完整上游页，避免截断上游页后永久跳过尾部条目。知乎 next URL 会在 adapter 内校验为同源且与 capability 路径匹配。Twitter 每次从当前 x.com 页面捕获 fresh GET/POST GraphQL request 模板，在同一 tab 内注入持久化 bottom cursor；authorization、CSRF 和 transaction headers 只存在于该次内存请求，不进入资源。
 
@@ -72,8 +72,7 @@ Refresh 最终不是单个平台的阅读器，而是所有个人信息流的统
 
 - `GET /messages` 只有 `limit`，没有稳定的 cursor/offset 响应契约。
 - B 站当前注册的是 `bilibili-main-popular`，调用热门 API；它不是登录用户首页的个性化“推荐”。
-- Twitter 当前只保存 tweet，对 GraphQL timeline cursor 没有建模。
-- 知乎和 B 站虽然能在一次函数调用里翻页，但 next cursor 没有进入资源层。
+- session message API 当前仍返回完整已发布结果，UI 接入时需要增加稳定的局部分页读取，避免长 session 传输全部历史。
 
 ## 5. 目标架构
 
@@ -107,12 +106,13 @@ FeedSession
     source: 单一 source 或 aggregate
     generation: 稳定标识
   status:
-    orderedMessageRefs: 当前已经发布给用户的顺序
     sourceStates: 每个底层 source 的 cursor / hasMore / lastWindow
     pendingNewCount: feed 头部新内容数
 ```
 
-FeedSession 管连续上下文；RefreshWindow 管每次抓取的执行和档案。两者不要合并成一个不断被改写的大对象。
+FeedSession 管 O(1) 连续上下文；RefreshWindow 管每次抓取的执行和档案。已发布顺序由 FeedPage 的 immutable `messageRefs` 按 ordinal 和首次出现规则派生，不复制到不断改写的 Status。
+
+受限规模测试确认了这个边界：100k refs 放进 Status 时，每次写中位数 160.7ms 并让数据库增长 5.18 MiB；从 5,000 个 linked FeedPage 派生同样 100k refs，中位数 56.6ms，且追加 page 不复制历史。
 
 推荐的外部动作语义：
 
@@ -151,7 +151,7 @@ fetchNext(source, cursor, count): Promise<FetchPageResult>
 2. 候选不足时，仅向仍有 `hasMore` 的 source 请求下一页。
 3. 归一化、去重后交给 ranker。
 4. ranker 只决定尚未发布内容的顺序，不回排用户已经看到的卡片。
-5. 将选中的 refs 追加到 session 的 `orderedMessageRefs`。
+5. 将选中的 refs 写入新的 immutable FeedPage；已发布顺序由全部 page 的首次出现顺序确定。
 
 第一版 ranker 可以是有明确配额的确定性交错；它只是过渡实现。未来 ranker 的候选信号可包括来源、内容新鲜度、作者、主题、已读/点击/收藏/负反馈和历史相似内容。排序器应是独立接口，不能写进平台 adapter 或 React 组件。
 

@@ -17,6 +17,7 @@ import {
 } from './resource-definitions'
 import {
   getRefreshResource,
+  listRefreshResourcesLinkedTo,
   listRefreshResources,
   putRefreshResource,
   registerRefreshLitectlKinds,
@@ -129,6 +130,16 @@ export async function getResource(definition: ResourceDefinition, name: string):
 
 export async function listResources(definition: ResourceDefinition): Promise<Resource[]> {
   return listRefreshResources(database(), definition)
+}
+
+export async function listFeedPagesInStore(sessionName: string): Promise<Resource[]> {
+  return listRefreshResourcesLinkedTo(
+    database(),
+    FeedPageResource,
+    'page-of',
+    FeedSessionResource,
+    sessionName,
+  )
 }
 
 export async function listResourceNames(definition: ResourceDefinition): Promise<string[]> {

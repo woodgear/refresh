@@ -37,6 +37,12 @@ class MemoryFeedSessionRepository implements FeedSessionRepository {
     return [...this.sessions.values()].map(session => structuredClone(session))
   }
 
+  async listPages(name: string): Promise<FeedPageResource[]> {
+    return [...this.pages.values()]
+      .filter(page => page.spec.session === name)
+      .map(page => structuredClone(page))
+  }
+
   async commit(session: FeedSessionResource, page: FeedPageResource): Promise<void> {
     if (this.pages.has(page.metadata.name)) throw new Error(`feed page already exists: ${page.metadata.name}`)
     this.sessions.set(session.metadata.name, structuredClone(session))
@@ -75,17 +81,29 @@ test('a new service instance continues from the committed cursor and preserves o
   const archiver = new MemoryArchiver()
 
   const first = await service(repository, fetcher, archiver).restart(source, 2)
-  expect(first.session.status.orderedMessageRefs).toEqual(['a', 'b'])
+  expect(await service(repository, fetcher, archiver).messageRefs(first.session.metadata.name)).toEqual(['a', 'b'])
   expect(first.page.spec.mode).toBe('restart')
 
   const second = await service(repository, fetcher, archiver).continue(first.session.metadata.name, 2)
-  expect(second.session.status.orderedMessageRefs).toEqual(['a', 'b', 'c'])
   expect(second.page.spec.messageRefs).toEqual(['b', 'c'])
+  expect(await service(repository, fetcher, archiver).messageRefs(first.session.metadata.name)).toEqual(['a', 'b', 'c'])
 
   const third = await service(repository, fetcher, archiver).continue(first.session.metadata.name, 2)
-  expect(third.session.status.orderedMessageRefs).toEqual(['a', 'b', 'c', 'd'])
   expect(third.session.status.hasMore).toBe(false)
+  expect(await service(repository, fetcher, archiver).messageRefs(first.session.metadata.name)).toEqual(['a', 'b', 'c', 'd'])
   expect(fetcher.calls.map(call => call.cursor)).toEqual([null, 'cursor-1', 'cursor-2'])
+})
+
+test('published order fails when immutable page ordinals are incomplete', async () => {
+  const repository = new MemoryFeedSessionRepository()
+  const feed = service(repository, new MockContinuationFetcher({ [source.name]: pages }), new MemoryArchiver())
+  const first = await feed.restart(source, 2)
+  const page = repository.pages.get(first.page.metadata.name)!
+  page.spec.ordinal = 1
+
+  await expect(feed.messageRefs(first.session.metadata.name)).rejects.toThrow(
+    `FeedSession/${first.session.metadata.name} has invalid FeedPage ordinal 1 at index 0`,
+  )
 })
 
 test('archive failure leaves the committed cursor unchanged and retries the same page', async () => {
@@ -132,6 +150,7 @@ test('raw platform cursors are omitted from the HTTP representation', async () =
 
   expect(session.status.nextCursor).toBe('cursor-1')
   expect(publicFeedSession(session).status).not.toHaveProperty('nextCursor')
+  expect(publicFeedSession(session).status).not.toHaveProperty('orderedMessageRefs')
 })
 
 test('one session rejects overlapping page requests', async () => {

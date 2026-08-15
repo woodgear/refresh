@@ -12,8 +12,8 @@ This phase does not implement aggregate ranking, real platform cursor adapters, 
 - `POST /api/v1/feedsessions/{name}/pages` fetches the committed next cursor and appends one page.
 - `GET /api/v1/feedsessions/{name}/messages` returns messages in the session's stable published order.
 - A new service instance can load the session and continue from the same cursor.
-- A fetch or archive failure leaves the committed cursor and ordered message refs unchanged; retry requests the same cursor.
-- Duplicate message refs remain in the immutable page/window audit record but are appended to the session order only once.
+- A fetch or archive failure leaves the committed cursor and immutable page sequence unchanged; retry requests the same cursor.
+- Duplicate message refs remain in the immutable page/window audit record but appear in the published order only once.
 - Concurrent page requests for one session are rejected explicitly.
 - Platform cursors remain server-side; API clients continue by session name and never receive the raw cursor.
 
@@ -29,7 +29,6 @@ FeedSession
   status:
     nextCursor       # internal; removed from the HTTP representation
     hasMore
-    orderedMessageRefs
     pageCount
     lastPage
     lastWindow
@@ -48,6 +47,7 @@ FeedPage
 ```
 
 `FeedPage` declares `page-of` and `page-window` links. Callers provide public names only; the ResourceStore facade resolves UID references and litectl materializes links.
+Published order is the first occurrence of each message ref across immutable pages in ordinal order. It is derived when reading the session and is not copied into mutable Status.
 
 ## Commit Boundary
 
