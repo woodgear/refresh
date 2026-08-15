@@ -179,13 +179,34 @@ class MockApiContinuationFetcher implements ContinuationFetcher {
   }
 }
 
-class UnsupportedContinuationFetcher implements ContinuationFetcher {
-  async fetchHead(source: SourceConfig): Promise<FetchPageResult> {
-    throw new ContinuationUnsupportedError(`continuation is not implemented for source: ${source.name}`)
+class CdpContinuationFetcher implements ContinuationFetcher {
+  async fetchHead(source: SourceConfig, count: number, log: (line: string) => void): Promise<FetchPageResult> {
+    return this.fetch(source, count, null, log)
   }
 
-  async fetchNext(source: SourceConfig): Promise<FetchPageResult> {
-    throw new ContinuationUnsupportedError(`continuation is not implemented for source: ${source.name}`)
+  async fetchNext(
+    source: SourceConfig,
+    cursor: string,
+    count: number,
+    log: (line: string) => void,
+  ): Promise<FetchPageResult> {
+    return this.fetch(source, count, cursor, log)
+  }
+
+  private async fetch(
+    source: SourceConfig,
+    count: number,
+    cursor: string | null,
+    log: (line: string) => void,
+  ): Promise<FetchPageResult> {
+    if (source.platform !== 'bilibili') {
+      throw new ContinuationUnsupportedError(`continuation is not implemented for source: ${source.name}`)
+    }
+    if (source.capability !== 'follow' && source.capability !== 'popular') {
+      throw new ContinuationUnsupportedError(`continuation is not implemented for source: ${source.name}`)
+    }
+    const { fetchBilibiliPage } = await import('./cdp-bilibili')
+    return fetchBilibiliPage(source.capability, count, cursor, log)
   }
 }
 
@@ -227,5 +248,5 @@ export function defaultFetcher(): Fetcher {
 export function defaultContinuationFetcher(): ContinuationFetcher {
   return process.env.RADAR_FETCHER === 'mock'
     ? new MockApiContinuationFetcher()
-    : new UnsupportedContinuationFetcher()
+    : new CdpContinuationFetcher()
 }

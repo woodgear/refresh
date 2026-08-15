@@ -46,6 +46,8 @@ verify.sh 全绿（A1-A4, A6, A9）且 A5/A7/A8 均为 [A] awaiting-user → loo
 
 ## 迭代日志（续）
 
+- 2026-08-15 / B 站真实 continuation / 将 B 站 CDP adapter 拆为纯分页遍历器与页面上下文 loader，follow cursor 持久化 offset，popular cursor 持久化下一页号；逻辑 page 始终保留完整上游页，`count` 是目标量而非截断上限，避免游标推进后丢弃页尾。损坏/跨 capability cursor 明确失败，旧 RefreshWindow fetch 仍保持 count 上限。受限真实只读 probe：follow 21→20、popular 20→20，head/next 规范化 ref 重叠均为 0，未写数据库。
+
 - 2026-08-15 / FeedSession 单 source continuation / 在 litectl V2 ResourceStore 上新增 `FeedSession` + 独立 Status、不可变 `FeedPage`，由声明式 reference 自动物化 `page-of` / `page-window` link。新增 restart/page/messages API，平台 cursor 不出 HTTP；fetch/archive 失败不推进状态，跨页去重但保留完整 page membership，同 session 并发请求明确拒绝。mock 纵切跨进程重启后继续成功，真实平台 adapter 暂明确返回 501。受限 verify `PASS=118 FAIL=0`，CPU 3.524s、峰值 210.3MiB。
 
 - 2026-08-15 / litectl V2 ResourceStore / 用 litectl V2 替换 750 行自研 SQLite runtime，public PascalCase kind 与 inline status 保持不变，facade 在单事务内拆装 lower-case subject + 独立业务 Status，并物化 window item/overlay link。旧 `refresh.db` 首次启动自动全量转换、逐资源对账、保留备份后原子替换。真实 61,466 资源副本迁移为 92,408 个 V2 资源，单核 36.6s、峰值 1.7GiB，integrity check 与真实数据短启动通过；发现并在 litectl 底层修复浮点 round-trip 导致的 raw 漂移。verify 105 断言全绿，真实数据库未切换。

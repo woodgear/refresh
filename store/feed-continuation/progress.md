@@ -13,7 +13,10 @@
 - Added REST endpoints for create, list/get, ordered messages, and append page. Raw platform cursors are removed from all HTTP resource projections and from fetch failure responses.
 - Verified a two-page mock flow across a real process restart. The second page appended one new Message, preserved order and creation time, and produced the expected four strong links.
 - Verification passed: 8 unit tests, 9 litectl contract tests, TypeScript, Vite build, and constrained `verify.sh` with `PASS=118 FAIL=0`, 3.524 CPU seconds, and 210.3 MiB peak memory.
-- Real platform continuation adapters remain explicit `501 Not Implemented`; no head-fetch fallback was added.
+- Added real Bilibili continuation without changing the storage boundary: `follow` persists the API offset and `popular` persists the next page number in a versioned, capability-bound cursor.
+- Split Bilibili traversal from its CDP loader so complete-page and cursor behavior is covered without browser mocks. The old one-shot fetch still slices to its requested count; continuation never truncates an upstream page.
+- Constrained read-only real probes passed without database writes: follow returned 21 then 20 normalized refs, popular returned 20 then 20, and both head/next pairs had zero overlap.
+- Zhihu and Twitter remain explicit `501 Not Implemented`; Bilibili follow/popular now route through the real `CdpContinuationFetcher`.
 
 ## Stop Evidence
 

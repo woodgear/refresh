@@ -17,6 +17,8 @@ This phase does not implement aggregate ranking, real platform cursor adapters, 
 - Concurrent page requests for one session are rejected explicitly.
 - Platform cursors remain server-side; API clients continue by session name and never receive the raw cursor.
 
+`count` is a target batch size for real adapters, not permission to truncate an upstream page. An adapter must archive the whole final upstream page before committing its next cursor, otherwise continuation would permanently skip the truncated tail.
+
 ## Resource Model
 
 ```text

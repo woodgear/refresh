@@ -105,7 +105,7 @@ GET  /api/v1/feedsessions/{name}/messages
 POST /api/v1/feedsessions/{name}/pages
 ```
 
-客户端按 session 名继续，不接触平台原始 cursor。不支持 continuation 的真实 source 当前明确返回 `501`，不会退化成从头抓取。
+客户端按 session 名继续，不接触平台原始 cursor。B 站关注流和热门流已支持真实 continuation；知乎和 Twitter source 当前明确返回 `501`，不会退化成从头抓取。
 
 ## 部署
 
