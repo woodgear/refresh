@@ -72,11 +72,58 @@ const feedPageSchema = {
   additionalProperties: false,
 } as const
 
+const aggregateFeedPageSchema = {
+  type: 'object',
+  required: ['sessionRef', 'ordinal', 'mode', 'messageRefs', 'failedSources'],
+  properties: {
+    sessionRef: REFERENCE_SCHEMA,
+    ordinal: { type: 'integer', minimum: 0 },
+    mode: { enum: ['restart', 'continue'] },
+    messageRefs: { type: 'array', items: { type: 'string' } },
+    failedSources: { type: 'array', items: { type: 'string' } },
+  },
+  'x-litectl-links': [{ fieldPath: '/sessionRef', relation: 'page-of' }],
+  additionalProperties: false,
+} as const
+
+const feedSourcePageSchema = {
+  type: 'object',
+  required: [
+    'sessionRef',
+    'pageRef',
+    'windowRef',
+    'source',
+    'inputCursor',
+    'outputCursor',
+    'hasMore',
+    'fetchedAt',
+    'messageRefs',
+  ],
+  properties: {
+    sessionRef: REFERENCE_SCHEMA,
+    pageRef: REFERENCE_SCHEMA,
+    windowRef: REFERENCE_SCHEMA,
+    source: { type: 'string' },
+    inputCursor: { type: ['string', 'null'] },
+    outputCursor: { type: ['string', 'null'] },
+    hasMore: { type: 'boolean' },
+    fetchedAt: { type: 'number' },
+    messageRefs: { type: 'array', items: { type: 'string' } },
+  },
+  'x-litectl-links': [
+    { fieldPath: '/sessionRef', relation: 'source-page-of' },
+    { fieldPath: '/pageRef', relation: 'source-page-batch' },
+    { fieldPath: '/windowRef', relation: 'source-page-window' },
+  ],
+  additionalProperties: false,
+} as const
+
 const feedSessionSchema = {
   type: 'object',
   required: ['source', 'generation'],
   properties: {
     source: { type: 'string' },
+    sources: { type: 'array', minItems: 2, uniqueItems: true, items: { type: 'string' } },
     generation: { type: 'string' },
   },
   additionalProperties: false,
@@ -119,6 +166,12 @@ export const FeedSessionResource = defineResource('FeedSession', 'feed-session',
 export const FeedPageResource = defineResource('FeedPage', 'feed-page', {
   schema: feedPageSchema,
 })
+export const AggregateFeedPageResource = defineResource('AggregateFeedPage', 'aggregate-feed-page', {
+  schema: aggregateFeedPageSchema,
+})
+export const FeedSourcePageResource = defineResource('FeedSourcePage', 'feed-source-page', {
+  schema: feedSourcePageSchema,
+})
 
 export const ALL_RESOURCE_DEFINITIONS = [
   MessageResource,
@@ -134,6 +187,8 @@ export const ALL_RESOURCE_DEFINITIONS = [
   AccountStatusResource,
   FeedSessionResource,
   FeedPageResource,
+  AggregateFeedPageResource,
+  FeedSourcePageResource,
 ] as const
 
 export type ResourceKind = (typeof ALL_RESOURCE_DEFINITIONS)[number]['kind']

@@ -2,11 +2,13 @@ import type { Database } from 'bun:sqlite'
 import type { Resource } from './store'
 import {
   ALL_RESOURCE_DEFINITIONS,
+  AggregateFeedPageResource,
   AuthorResource,
   FolloweeResource,
   FolloweeWindowItemResource,
   FolloweeWindowResource,
   FeedPageResource,
+  FeedSourcePageResource,
   FeedSessionResource,
   MediaObjectResource,
   MessageResource,
@@ -165,6 +167,20 @@ function toStorageResource(
     delete spec.window
     spec.sessionRef = referenceTo(database, FeedSessionResource, sessionName)
     spec.windowRef = referenceTo(database, RefreshWindowResource, windowName)
+  } else if (definition === AggregateFeedPageResource) {
+    const sessionName = stringField(spec, 'session', `${resource.kind}/${resource.metadata.name}.spec`)
+    delete spec.session
+    spec.sessionRef = referenceTo(database, FeedSessionResource, sessionName)
+  } else if (definition === FeedSourcePageResource) {
+    const sessionName = stringField(spec, 'session', `${resource.kind}/${resource.metadata.name}.spec`)
+    const pageName = stringField(spec, 'page', `${resource.kind}/${resource.metadata.name}.spec`)
+    const windowName = stringField(spec, 'window', `${resource.kind}/${resource.metadata.name}.spec`)
+    delete spec.session
+    delete spec.page
+    delete spec.window
+    spec.sessionRef = referenceTo(database, FeedSessionResource, sessionName)
+    spec.pageRef = referenceTo(database, AggregateFeedPageResource, pageName)
+    spec.windowRef = referenceTo(database, RefreshWindowResource, windowName)
   }
 
   return { spec, labels, annotations }
@@ -196,6 +212,20 @@ function fromStorageResource(definition: ResourceDefinition, row: ResourceRow): 
     delete spec.sessionRef
     delete spec.windowRef
     spec.session = sessionRef.name
+    spec.window = windowRef.name
+  } else if (definition === AggregateFeedPageResource) {
+    const sessionRef = referenceField(spec, 'sessionRef', `AggregateFeedPage/${row.name}.spec`)
+    delete spec.sessionRef
+    spec.session = sessionRef.name
+  } else if (definition === FeedSourcePageResource) {
+    const sessionRef = referenceField(spec, 'sessionRef', `FeedSourcePage/${row.name}.spec`)
+    const pageRef = referenceField(spec, 'pageRef', `FeedSourcePage/${row.name}.spec`)
+    const windowRef = referenceField(spec, 'windowRef', `FeedSourcePage/${row.name}.spec`)
+    delete spec.sessionRef
+    delete spec.pageRef
+    delete spec.windowRef
+    spec.session = sessionRef.name
+    spec.page = pageRef.name
     spec.window = windowRef.name
   }
 

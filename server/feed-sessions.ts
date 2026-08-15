@@ -21,17 +21,38 @@ import {
   type WindowFile,
 } from './store'
 
-export interface FeedSessionSpec {
+export interface SingleFeedSessionSpec {
   source: string
   generation: string
 }
 
-export interface FeedSessionStatus {
+export interface SingleFeedSessionStatus {
   nextCursor: string | null
   hasMore: boolean
   pageCount: number
   lastPage: string
   lastWindow: string
+}
+
+export interface AggregateSourceState {
+  nextCursor: string | null
+  hasMore: boolean
+  lastWindow: string | null
+  lastError: string | null
+}
+
+export interface AggregateFeedSessionSpec {
+  source: 'aggregate'
+  sources: string[]
+  generation: string
+}
+
+export interface AggregateFeedSessionStatus {
+  hasMore: boolean
+  pageCount: number
+  lastPage: string
+  failedSources: string[]
+  sourceStates: Record<string, AggregateSourceState>
 }
 
 export interface FeedPageSpec {
@@ -46,7 +67,9 @@ export interface FeedPageSpec {
   messageRefs: string[]
 }
 
-export type FeedSessionResource = Resource<FeedSessionSpec, FeedSessionStatus> & { kind: 'FeedSession' }
+export type SingleFeedSessionResource = Resource<SingleFeedSessionSpec, SingleFeedSessionStatus> & { kind: 'FeedSession' }
+export type AggregateFeedSessionResource = Resource<AggregateFeedSessionSpec, AggregateFeedSessionStatus> & { kind: 'FeedSession' }
+export type FeedSessionResource = SingleFeedSessionResource | AggregateFeedSessionResource
 export type FeedPageResource = Resource<FeedPageSpec, Record<string, never>> & { kind: 'FeedPage' }
 
 export interface FeedPageArchive {
@@ -72,7 +95,7 @@ export interface FeedSessionRepository {
 }
 
 export interface FeedPageTransition {
-  session: FeedSessionResource
+  session: SingleFeedSessionResource
   page: FeedPageResource
 }
 
@@ -94,11 +117,11 @@ export class FeedSessionService {
   ) {}
 
   async restart(source: SourceConfig, requestedCount: number): Promise<FeedPageTransition> {
-    const count = pageSize(requestedCount)
+    const count = feedPageSize(requestedCount)
     const generation = this.newGeneration()
     const sessionName = `${source.name}-${generation}`
     const result = await this.fetchHead(source, count, sessionName)
-    validateFetchResult(result, source.name)
+    validateFetchPageResult(result, source.name)
     return this.commitPage({
       sessionName,
       generation,
@@ -118,14 +141,17 @@ export class FeedSessionService {
     this.inFlight.add(name)
     try {
       const current = await this.get(name)
+      if (isAggregateFeedSession(current)) {
+        throw new FeedSessionInputError(`aggregate feed session requires aggregate continuation: ${name}`)
+      }
       if (!current.status.hasMore) throw new FeedSessionExhaustedError(`feed session has no more pages: ${name}`)
       if (current.status.nextCursor === null) throw new Error(`FeedSession/${name} hasMore=true without nextCursor`)
       const source = getSource(current.spec.source)
       if (!source) throw new Error(`FeedSession/${name} references unknown source: ${current.spec.source}`)
-      const count = pageSize(requestedCount)
+      const count = feedPageSize(requestedCount)
       const inputCursor = current.status.nextCursor
       const result = await this.fetchNext(source, inputCursor, count, name)
-      validateFetchResult(result, source.name)
+      validateFetchPageResult(result, source.name)
       return await this.commitPage({
         sessionName: name,
         generation: current.spec.generation,
@@ -153,6 +179,9 @@ export class FeedSessionService {
 
   async messageRefs(name: string): Promise<string[]> {
     const session = await this.get(name)
+    if (isAggregateFeedSession(session)) {
+      throw new FeedSessionInputError(`aggregate feed session requires aggregate message order: ${name}`)
+    }
     const pages = await this.repository.listPages(name)
     return derivePublishedMessageRefs(session, pages)
   }
@@ -184,7 +213,7 @@ export class FeedSessionService {
 
   private async commitPage(
     input: FeedPageArchive,
-    previous: FeedSessionResource | null,
+    previous: SingleFeedSessionResource | null,
   ): Promise<FeedPageTransition> {
     const archive = await this.archiver.archive(input)
     const pageName = `${input.sessionName}-${String(input.ordinal).padStart(6, '0')}`
@@ -210,7 +239,7 @@ export class FeedSessionService {
       },
       status: {},
     }
-    const session: FeedSessionResource = {
+    const session: SingleFeedSessionResource = {
       apiVersion: 'radar/v1',
       kind: 'FeedSession',
       metadata: previous?.metadata ?? {
@@ -250,7 +279,7 @@ class StoredFeedSessionRepository implements FeedSessionRepository {
   }
 }
 
-class StoredFeedPageArchiver implements FeedPageArchiver {
+export class StoredFeedPageArchiver implements FeedPageArchiver {
   async archive(input: FeedPageArchive): Promise<{ windowName: string; messageRefs: string[] }> {
     const now = new Date().toISOString()
     const windowName = `${input.source.name}-${crypto.randomUUID()}`
@@ -306,6 +335,28 @@ export function defaultFeedSessionService(): FeedSessionService {
 }
 
 export function publicFeedSession(session: FeedSessionResource): Resource {
+  if (isAggregateFeedSession(session)) {
+    return {
+      ...session,
+      status: {
+        hasMore: session.status.hasMore,
+        pageCount: session.status.pageCount,
+        lastPage: session.status.lastPage,
+        failedSources: session.status.failedSources,
+        sourceStates: Object.fromEntries(
+          session.spec.sources.map(source => {
+            const state = session.status.sourceStates[source]
+            if (!state) throw new Error(`FeedSession/${session.metadata.name} is missing source state: ${source}`)
+            return [source, {
+              hasMore: state.hasMore,
+              lastWindow: state.lastWindow,
+              lastError: state.lastError,
+            }]
+          }),
+        ),
+      },
+    }
+  }
   return {
     ...session,
     status: {
@@ -323,7 +374,7 @@ export function publicFeedPage(page: FeedPageResource): Resource {
 }
 
 export function derivePublishedMessageRefs(
-  session: FeedSessionResource,
+  session: SingleFeedSessionResource,
   pages: FeedPageResource[],
 ): string[] {
   pages.sort((left, right) => left.spec.ordinal - right.spec.ordinal)
@@ -349,15 +400,19 @@ export function derivePublishedMessageRefs(
   return ordered
 }
 
-function pageSize(value: number): number {
+export function feedPageSize(value: number): number {
   if (!Number.isInteger(value) || value < 1 || value > 200) {
     throw new FeedSessionInputError(`feed page count must be an integer from 1 to 200: ${value}`)
   }
   return value
 }
 
-function validateFetchResult(result: FetchPageResult, source: string): void {
+export function validateFetchPageResult(result: FetchPageResult, source: string): void {
   if (result.hasMore !== (result.nextCursor !== null)) {
     throw new Error(`continuation fetcher returned inconsistent cursor state for ${source}`)
   }
+}
+
+export function isAggregateFeedSession(session: FeedSessionResource): session is AggregateFeedSessionResource {
+  return session.spec.source === 'aggregate'
 }

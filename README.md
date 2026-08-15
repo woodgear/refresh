@@ -96,7 +96,7 @@ bunx tsc --noEmit
 
 `verify.sh` 使用隔离的 mock 数据，不依赖真实平台登录态。
 
-单 source continuation API：
+Continuation API：
 
 ```text
 POST /api/v1/feedsessions
@@ -105,8 +105,10 @@ GET  /api/v1/feedsessions/{name}/messages
 POST /api/v1/feedsessions/{name}/pages
 ```
 
-客户端按 session 名继续，不接触平台原始 cursor。当前注册的知乎、B 站和 Twitter source 均已支持真实 continuation；未来未实现的平台或 capability 会明确返回 `501`，不会退化成从头抓取。
-FeedSession 只保存 O(1) continuation 状态；消息顺序由关联的不可变 FeedPage 按 ordinal 派生，避免长 session 在每次追加时重写全部历史。
+创建单 source session 时提交 `{"spec":{"source":"zhihu-main-recommend","count":20}}`；聚合 session 提交显式有序列表，例如 `{"spec":{"sources":["zhihu-main-recommend","twitter-main-recommend"],"count":20}}`。聚合 v1 按 source 顺序确定性交错，单源 fetch 失败不推进该源 cursor，其他源仍可提交。
+
+客户端按 session 名继续，不接触平台原始 cursor。当前注册的知乎、B 站和 Twitter source 均已支持真实 continuation；未来未实现的平台或 capability 会明确返回 `501`，不会退化成从头抓取。B 站个性化推荐尚未注册，因此服务不提供把热门流伪装成推荐流的默认聚合列表。
+FeedSession 只保存 O(1) continuation 状态；消息顺序由关联的不可变 FeedPage / AggregateFeedPage 按 ordinal 派生，避免长 session 在每次追加时重写全部历史。
 
 ## 部署
 

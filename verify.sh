@@ -228,6 +228,17 @@ assert_eq "false" "$(echo "$FEED" | jq -r '.page.spec | has("inputCursor") or ha
 assert_eq "3" "$(curl -s "$BASE/feedsessions/$FEED_NAME/messages" | jq '.items | length')" "第一页保持发布顺序"
 assert_eq "2" "$(sqlite3 "$TMPDIR/refresh.db" "select count(*) from resource_links where relation in ('page-of','page-window');")" "FeedPage 物化 session/window links"
 
+log "== Aggregate FeedSession: 显式 sources、确定性排序、cursor 不出 API =="
+AGGREGATE=$(curl -s -X POST "$BASE/feedsessions" -d '{"spec":{"sources":["zhihu-main-recommend","twitter-main-recommend"],"count":4}}')
+AGGREGATE_NAME=$(echo "$AGGREGATE" | jq -r .session.metadata.name)
+assert_eq "1" "$(echo "$AGGREGATE" | jq -r .session.status.pageCount)" "aggregate restart 创建第一页"
+assert_eq "AggregateFeedPage" "$(echo "$AGGREGATE" | jq -r .page.kind)" "aggregate page 使用独立资源"
+assert_eq "2" "$(echo "$AGGREGATE" | jq '.sourcePages | length')" "每个成功 source 保留独立 source page"
+assert_eq "false" "$(echo "$AGGREGATE" | jq '[.sourcePages[].spec | has("inputCursor") or has("outputCursor")] | any')" "source page API 隐藏平台 cursor"
+assert_eq "false" "$(echo "$AGGREGATE" | jq '[.session.status.sourceStates[] | has("nextCursor")] | any')" "aggregate session API 隐藏各源 cursor"
+assert_eq "4" "$(curl -s "$BASE/feedsessions/$AGGREGATE_NAME/messages" | jq '.items | length')" "aggregate 第一页 round-robin 发布"
+assert_eq "6" "$(sqlite3 "$TMPDIR/refresh.db" "select count(*) from resource_links where relation in ('source-page-of','source-page-batch','source-page-window');")" "aggregate source page 物化三类强 link"
+
 log "== A5(mock): 登录闭环（logged_out → LoginSession → Succeeded → 补抓） =="
 PORT2=$((PORT+1))
 BASE2="http://localhost:${PORT2}/api/v1"
@@ -303,7 +314,17 @@ assert_eq "false" "$(echo "$FEED_NEXT" | jq -r '.session.status | has("nextCurso
 assert_eq "4" "$(curl -s "$BASE/feedsessions/$FEED_NAME/messages" | jq '.items | length')" "第二页原位追加且跨页去重"
 assert_eq "7" "$(curl -s "$BASE/messages" | jq '.items | length')" "第二页新 Message 进入全局归档"
 assert_eq "409" "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/feedsessions/$FEED_NAME/pages" -d '{}')" "耗尽 session 明确拒绝继续"
-assert_eq "4" "$(sqlite3 "$TMPDIR/refresh.db" "select count(*) from resource_links where relation in ('page-of','page-window');")" "两页共四条强 link"
+assert_eq "4" "$(sqlite3 "$TMPDIR/refresh.db" "select count(*) from resource_links link join resources page on page.id=link.from_id where page.kind='feed-page' and relation in ('page-of','page-window');")" "两页共四条强 link"
+
+assert_eq "1" "$(curl -s "$BASE/feedsessions/$AGGREGATE_NAME" | jq -r .status.pageCount)" "重启后 aggregate FeedSession 恢复"
+AGGREGATE_NEXT=$(curl -s -X POST "$BASE/feedsessions/$AGGREGATE_NAME/pages" -d '{}')
+assert_eq "2" "$(echo "$AGGREGATE_NEXT" | jq -r .session.status.pageCount)" "aggregate 从各源已提交 cursor 继续"
+assert_eq "false" "$(echo "$AGGREGATE_NEXT" | jq -r .session.status.hasMore)" "aggregate 在全部 source 耗尽后结束"
+assert_eq "false" "$(echo "$AGGREGATE_NEXT" | jq '[.sourcePages[].spec | has("inputCursor") or has("outputCursor")] | any')" "aggregate continue 仍隐藏 cursor"
+assert_eq "6" "$(curl -s "$BASE/feedsessions/$AGGREGATE_NAME/messages" | jq '.items | length')" "aggregate 第二页原位追加且不回排"
+assert_eq "8" "$(curl -s "$BASE/messages" | jq '.items | length')" "aggregate continuation 新 Message 进入全局归档"
+assert_eq "409" "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/feedsessions/$AGGREGATE_NAME/pages" -d '{}')" "耗尽 aggregate session 明确拒绝继续"
+assert_eq "12" "$(sqlite3 "$TMPDIR/refresh.db" "select count(*) from resource_links where relation in ('source-page-of','source-page-batch','source-page-window');")" "两轮 aggregate source page 共十二条强 link"
 
 log ""
 log "PASS=$PASS FAIL=$FAIL"

@@ -31,7 +31,13 @@ import {
   FeedSessionNotFoundError,
   publicFeedPage,
   publicFeedSession,
+  isAggregateFeedSession,
 } from './feed-sessions'
+import {
+  defaultAggregateFeedSessionService,
+  publicAggregateFeedPage,
+  publicFeedSourcePage,
+} from './aggregate-feed-sessions'
 import { patchOverlay, patchOverlayMany, type OverlayEntry } from './store'
 import { mediaFilePath, mediaVariantName, mediaVariantPath, MIME_BY_EXT, isAllowedMediaHost, proxyMediaFetch } from './media'
 import { readFile } from 'fs/promises'
@@ -456,11 +462,30 @@ apiV1.post('/feedsessions', async c => {
     return c.json({ error: 'invalid JSON body' }, 400)
   }
   const spec = (body.spec ?? body) as Record<string, unknown>
-  const sourceName = String(spec.source ?? '')
-  const source = getSource(sourceName)
-  if (!source) return c.json({ error: `unknown source: ${sourceName}` }, 400)
   const count = spec.count === undefined ? 20 : Number(spec.count)
   try {
+    if (spec.sources !== undefined) {
+      if (spec.source !== undefined) {
+        throw new FeedSessionInputError('feed session accepts source or sources, not both')
+      }
+      if (!Array.isArray(spec.sources) || !spec.sources.every(name => typeof name === 'string')) {
+        throw new FeedSessionInputError('aggregate feed sources must be an array of source names')
+      }
+      const sources = spec.sources.map(name => {
+        const source = getSource(name)
+        if (!source) throw new FeedSessionInputError(`unknown source: ${name}`)
+        return source
+      })
+      const result = await defaultAggregateFeedSessionService().restart(sources, count)
+      return c.json({
+        session: publicFeedSession(result.session),
+        page: publicAggregateFeedPage(result.page),
+        sourcePages: result.sourcePages.map(publicFeedSourcePage),
+      }, 201)
+    }
+    const sourceName = String(spec.source ?? '')
+    const source = getSource(sourceName)
+    if (!source) throw new FeedSessionInputError(`unknown source: ${sourceName}`)
     const result = await defaultFeedSessionService().restart(source, count)
     return c.json({ session: publicFeedSession(result.session), page: publicFeedPage(result.page) }, 201)
   } catch (err) {
@@ -471,7 +496,10 @@ apiV1.post('/feedsessions', async c => {
 apiV1.get('/feedsessions/:name/messages', async c => {
   try {
     const sessionName = c.req.param('name')
-    const messageRefs = await defaultFeedSessionService().messageRefs(sessionName)
+    const session = await defaultFeedSessionService().get(sessionName)
+    const messageRefs = isAggregateFeedSession(session)
+      ? await defaultAggregateFeedSessionService().messageRefs(sessionName, session)
+      : await defaultFeedSessionService().messageRefs(sessionName)
     const items = []
     for (const name of messageRefs) {
       const message = await getMessage(name)
@@ -495,7 +523,17 @@ apiV1.post('/feedsessions/:name/pages', async c => {
   const spec = (body.spec ?? body) as Record<string, unknown>
   const count = spec.count === undefined ? 20 : Number(spec.count)
   try {
-    const result = await defaultFeedSessionService().continue(c.req.param('name'), count)
+    const name = c.req.param('name')
+    const session = await defaultFeedSessionService().get(name)
+    if (isAggregateFeedSession(session)) {
+      const result = await defaultAggregateFeedSessionService().continue(name, count)
+      return c.json({
+        session: publicFeedSession(result.session),
+        page: publicAggregateFeedPage(result.page),
+        sourcePages: result.sourcePages.map(publicFeedSourcePage),
+      }, 201)
+    }
+    const result = await defaultFeedSessionService().continue(name, count)
     return c.json({ session: publicFeedSession(result.session), page: publicFeedPage(result.page) }, 201)
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, feedSessionErrorStatus(err))

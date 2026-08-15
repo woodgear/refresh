@@ -17,10 +17,12 @@ import {
   registerRefreshLitectlKinds,
 } from './litectl-resource-facade'
 import {
+  AggregateFeedPageResource,
   MediaObjectResource,
   MessageResource,
   OverlayEntryResource,
   FeedPageResource,
+  FeedSourcePageResource,
   FeedSessionResource,
   RefreshWindowItemResource,
   RefreshWindowResource,
@@ -299,6 +301,99 @@ describe('Refresh resource facade contract', () => {
         ORDER BY link.relation`,
     ).all()
     expect(links.map(link => link.relation)).toEqual(['page-of', 'page-window'])
+  })
+
+  test('aggregate pages materialize session, batch, and window links', () => {
+    const session = {
+      apiVersion: 'radar/v1' as const,
+      kind: 'FeedSession',
+      metadata: { name: 'aggregate-1' },
+      spec: {
+        source: 'aggregate' as const,
+        sources: ['zhihu-main-recommend', 'twitter-main-recommend'],
+        generation: 'aggregate-generation-1',
+      },
+      status: {
+        hasMore: true,
+        pageCount: 1,
+        lastPage: 'aggregate-1-000000',
+        failedSources: [],
+        sourceStates: {
+          'zhihu-main-recommend': {
+            nextCursor: 'z-next', hasMore: true, lastWindow: 'aggregate-window-z', lastError: null,
+          },
+          'twitter-main-recommend': {
+            nextCursor: 't-next', hasMore: true, lastWindow: 'aggregate-window-t', lastError: null,
+          },
+        },
+      },
+    }
+    const page = {
+      apiVersion: 'radar/v1' as const,
+      kind: 'AggregateFeedPage',
+      metadata: { name: 'aggregate-1-000000' },
+      spec: {
+        session: session.metadata.name,
+        ordinal: 0,
+        mode: 'restart' as const,
+        messageRefs: ['zhihu-1', 'twitter-1'],
+        failedSources: [],
+      },
+      status: {},
+    }
+    const windows = ['aggregate-window-z', 'aggregate-window-t'].map(name => ({
+      apiVersion: 'radar/v1' as const,
+      kind: 'RefreshWindow',
+      metadata: { name },
+      spec: { source: name.endsWith('-z') ? 'zhihu-main-recommend' : 'twitter-main-recommend', count: 1 },
+      status: { phase: 'Succeeded' },
+    }))
+    const sourcePages = windows.map((window, index) => ({
+      apiVersion: 'radar/v1' as const,
+      kind: 'FeedSourcePage',
+      metadata: { name: `${page.metadata.name}-${index}` },
+      spec: {
+        session: session.metadata.name,
+        page: page.metadata.name,
+        window: window.metadata.name,
+        source: String(window.spec.source),
+        inputCursor: null,
+        outputCursor: index === 0 ? 'z-next' : 't-next',
+        hasMore: true,
+        fetchedAt: 1,
+        messageRefs: [index === 0 ? 'zhihu-1' : 'twitter-1'],
+      },
+      status: {},
+    }))
+
+    litectlWriteTransaction(database, () => {
+      putRefreshResource(database, session)
+      for (const window of windows) putRefreshResource(database, window)
+      putRefreshResource(database, page)
+      for (const sourcePage of sourcePages) putRefreshResource(database, sourcePage)
+    })
+
+    expect(getRefreshResource(database, AggregateFeedPageResource, page.metadata.name)).toEqual(page)
+    expect(sourcePages.map(sourcePage =>
+      getRefreshResource(database, FeedSourcePageResource, sourcePage.metadata.name),
+    )).toEqual(sourcePages)
+    const links = database.query<{ relation: string }, []>(
+      `SELECT link.relation
+         FROM resource_links link
+         JOIN resources resource ON resource.id = link.from_id
+        WHERE resource.name = 'aggregate-1-000000'
+           OR resource.name LIKE 'aggregate-1-000000-%'
+        ORDER BY link.relation`,
+    ).all()
+    expect(links.map(link => link.relation)).toEqual([
+      'page-of',
+      'source-page-batch',
+      'source-page-batch',
+      'source-page-of',
+      'source-page-of',
+      'source-page-window',
+      'source-page-window',
+    ])
   })
 
   test('feed session and page roll back together when their caller transaction fails', () => {

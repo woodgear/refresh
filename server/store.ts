@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url'
 import {
   initResourceStore,
   commitFeedPageInStore,
+  commitAggregateFeedPageInStore,
   listResourceNames,
   putWindowFile,
   readWindowFileFromStore,
@@ -21,6 +22,7 @@ import {
   getResource as resourceGetResource,
   listResources as resourceListResources,
   listFeedPagesInStore as resourceListFeedPages,
+  listAggregateFeedPagesInStore as resourceListAggregateFeedPages,
 } from './resource-store'
 import { FolloweeWindowResource, RefreshWindowResource, type ResourceDefinition } from './resource-definitions'
 
@@ -203,6 +205,15 @@ export async function commitFeedPage(session: Resource, page: Resource): Promise
   await commitFeedPageInStore(session, page)
 }
 
+export async function commitAggregateFeedPage(
+  session: Resource,
+  page: Resource,
+  sourcePages: Resource[],
+): Promise<void> {
+  await ensureDirs()
+  await commitAggregateFeedPageInStore(session, page, sourcePages)
+}
+
 export async function getStoredResource(definition: ResourceDefinition, name: string): Promise<Resource | null> {
   await ensureDirs()
   return resourceGetResource(definition, name)
@@ -216,4 +227,9 @@ export async function listStoredResources(definition: ResourceDefinition): Promi
 export async function listFeedPages(sessionName: string): Promise<Resource[]> {
   await ensureDirs()
   return resourceListFeedPages(sessionName)
+}
+
+export async function listAggregateFeedPages(sessionName: string): Promise<Resource[]> {
+  await ensureDirs()
+  return resourceListAggregateFeedPages(sessionName)
 }

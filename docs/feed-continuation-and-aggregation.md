@@ -1,6 +1,6 @@
 # 连续获取与跨平台聚合 Feed
 
-> 状态：产品与架构交接稿，2026-08-10。2026-08-15 已完成确定性 fetcher 契约、基于 litectl V2 的单 source FeedSession/FeedPage 持久化与 API 纵切，以及全部当前注册 source 的真实 cursor；聚合、updates 和 UI 尚未实现。
+> 状态：产品与架构交接稿，2026-08-10。2026-08-15 已完成 litectl V2 FeedSession/FeedPage、全部当前 source 的真实 cursor，以及显式 source 列表的确定性聚合 session；B 站个性化推荐、updates 和 UI 尚未实现。
 
 ## 1. 产品目标
 
@@ -65,6 +65,8 @@ Refresh 最终不是单个平台的阅读器，而是所有个人信息流的统
 - 平台 cursor 只保存在内部资源表示，FeedSession、FeedPage HTTP 响应均不返回 cursor。
 - source 已按 `account × capability` 注册。
 - 知乎 fetcher 会跟随 `paging.next`；B 站关注流会跟随 `offset`；B 站热门使用页码；Twitter 使用 HomeTimeline bottom cursor。
+- 聚合 session 持久化每个 source 的独立 cursor；`AggregateFeedPage` 保存发布顺序，`FeedSourcePage` 强关联本次 source window 并保留完整 membership。
+- 聚合 ranker 按调用方给出的 source 顺序确定性交错；单源 fetch 失败显式记录且不推进该源 cursor，全部失败不提交。
 
 当前 API 纵切接入了确定性 mock、知乎 `paging.next` URL、B 站关注流 offset / 热门流页码，以及 Twitter HomeTimeline bottom cursor。真实 adapter 的逻辑页把 `count` 视为目标数量并保留完整上游页，避免截断上游页后永久跳过尾部条目。知乎 next URL 会在 adapter 内校验为同源且与 capability 路径匹配。Twitter 每次从当前 x.com 页面捕获 fresh GET/POST GraphQL request 模板，在同一 tab 内注入持久化 bottom cursor；authorization、CSRF 和 transaction headers 只存在于该次内存请求，不进入资源。
 
@@ -145,15 +147,17 @@ fetchNext(source, cursor, count): Promise<FetchPageResult>
 
 ### 5.4 聚合 Feed
 
+已实现的 API 通过 `spec.sources` 接收显式且有序的 source 列表。暂不提供隐式默认列表：B 站个性化推荐 source 完成前，不能把 `bilibili-main-popular` 混作“为你推荐”。
+
 聚合 session 持有多个 source state。获取下一页时：
 
 1. 从本地未发布候选中先取数。
 2. 候选不足时，仅向仍有 `hasMore` 的 source 请求下一页。
 3. 归一化、去重后交给 ranker。
 4. ranker 只决定尚未发布内容的顺序，不回排用户已经看到的卡片。
-5. 将选中的 refs 写入新的 immutable FeedPage；已发布顺序由全部 page 的首次出现顺序确定。
+5. 将选中的 refs 写入新的 immutable AggregateFeedPage；每个成功 source 的完整 membership 写入强关联 window 的 FeedSourcePage。
 
-第一版 ranker 可以是有明确配额的确定性交错；它只是过渡实现。未来 ranker 的候选信号可包括来源、内容新鲜度、作者、主题、已读/点击/收藏/负反馈和历史相似内容。排序器应是独立接口，不能写进平台 adapter 或 React 组件。
+第一版 ranker 已实现为按 `spec.sources` 顺序的确定性交错；它只是过渡实现。未来 ranker 的候选信号可包括来源、内容新鲜度、作者、主题、已读/点击/收藏/负反馈和历史相似内容。排序器是独立纯函数，没有写进平台 adapter 或 React 组件。
 
 ## 6. 各平台 continuation 工作
 
@@ -198,7 +202,7 @@ fetchNext(source, cursor, count): Promise<FetchPageResult>
 4. [x] 为当前真实平台补齐可持久化 cursor：知乎、B 站和 Twitter 均完成。
 5. 通过真实网络确认并接入 B 站个性化推荐 source。
 6. 将 mockup 的本地切片替换为 page API，并将新内容提示接到真实 updates 状态。
-7. 实现确定性聚合 ranker；个性化算法作为后续独立迭代。
+7. [x] 实现显式 sources 的确定性聚合 ranker、独立 source cursor、部分失败和跨进程 continuation；个性化算法作为后续独立迭代。
 
 ## 9. 验收标准
 
@@ -206,7 +210,7 @@ fetchNext(source, cursor, count): Promise<FetchPageResult>
 - 抓取成功但归档失败时 cursor 不前移；重试能拿到同一页。
 - “获取更多”不会创建新 generation，也不会改变已展示内容的顺序。
 - “重新开始”创建新 generation，并能计算真实的新内容数量。
-- 一个 source 到底或失败时，聚合 session 仍能从其他 source 继续。
+- [x] 一个 source 到底或 fetch 失败时，聚合 session 仍能从其他 source 继续；archive/契约错误不降级。
 - 网页所有操作都能由外部 API 消费者复现。
 - B 站热门与个性化推荐是两个不同 source，不使用别名混淆。
 - mock 测试覆盖 cursor、去重、并发加载锁、失败重试和聚合 source 耗尽。

@@ -4,9 +4,11 @@ import { Database } from 'bun:sqlite'
 import type { Resource, OverlayEntry, OverlayKind, WindowFile, FolloweeWindowFile } from './store'
 import { recordOperation, recordResourceWrite, recordValidationFailure } from './observability'
 import {
+  AggregateFeedPageResource,
   FolloweeWindowItemResource,
   FolloweeWindowResource,
   FeedPageResource,
+  FeedSourcePageResource,
   FeedSessionResource,
   MediaObjectResource,
   OverlayEntryResource,
@@ -124,6 +126,33 @@ export async function commitFeedPageInStore(session: Resource, page: Resource): 
   })
 }
 
+export async function commitAggregateFeedPageInStore(
+  session: Resource,
+  page: Resource,
+  sourcePages: Resource[],
+): Promise<void> {
+  writeTransaction(() => {
+    if (session.kind !== FeedSessionResource.kind) throw new Error(`expected FeedSession, got ${session.kind}`)
+    if (page.kind !== AggregateFeedPageResource.kind) {
+      throw new Error(`expected AggregateFeedPage, got ${page.kind}`)
+    }
+    if (getRefreshResource(database(), AggregateFeedPageResource, page.metadata.name)) {
+      throw new Error(`aggregate feed page already exists: ${page.metadata.name}`)
+    }
+    for (const sourcePage of sourcePages) {
+      if (sourcePage.kind !== FeedSourcePageResource.kind) {
+        throw new Error(`expected FeedSourcePage, got ${sourcePage.kind}`)
+      }
+      if (getRefreshResource(database(), FeedSourcePageResource, sourcePage.metadata.name)) {
+        throw new Error(`feed source page already exists: ${sourcePage.metadata.name}`)
+      }
+    }
+    putResourceSync(session)
+    putResourceSync(page)
+    for (const sourcePage of sourcePages) putResourceSync(sourcePage)
+  })
+}
+
 export async function getResource(definition: ResourceDefinition, name: string): Promise<Resource | null> {
   return getRefreshResource(database(), definition, name)
 }
@@ -136,6 +165,16 @@ export async function listFeedPagesInStore(sessionName: string): Promise<Resourc
   return listRefreshResourcesLinkedTo(
     database(),
     FeedPageResource,
+    'page-of',
+    FeedSessionResource,
+    sessionName,
+  )
+}
+
+export async function listAggregateFeedPagesInStore(sessionName: string): Promise<Resource[]> {
+  return listRefreshResourcesLinkedTo(
+    database(),
+    AggregateFeedPageResource,
     'page-of',
     FeedSessionResource,
     sessionName,
