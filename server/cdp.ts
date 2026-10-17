@@ -3,7 +3,7 @@
 // 不可用时自拉起。不依赖 bb-browser。
 
 import { spawn } from 'child_process'
-import { mkdir } from 'fs/promises'
+import { mkdir, readlink, unlink } from 'fs/promises'
 import { existsSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -87,6 +87,7 @@ function findChromeExecutable(): string | null {
 }
 
 function chromeOzonePlatform(): string {
+  if (chromeHeadless()) return ''
   if (process.env.RADAR_CHROME_OZONE_PLATFORM !== undefined) return process.env.RADAR_CHROME_OZONE_PLATFORM
   if (process.env.WAYLAND_DISPLAY) return 'wayland'
   const runtimeDir = process.env.XDG_RUNTIME_DIR
@@ -107,6 +108,10 @@ function chromeEnv(ozonePlatform: string): NodeJS.ProcessEnv {
   return env
 }
 
+function chromeHeadless(): boolean {
+  return process.env.RADAR_CHROME_HEADLESS === '1'
+}
+
 function processAlive(pid: number): boolean {
   try {
     process.kill(pid, 0)
@@ -114,6 +119,31 @@ function processAlive(pid: number): boolean {
   } catch {
     return false
   }
+}
+
+async function clearStaleChromeLocks(profileDir: string, log: (s: string) => void): Promise<void> {
+  const lockNames = ['SingletonLock', 'SingletonCookie', 'SingletonSocket']
+  let lockTarget: string
+  try {
+    lockTarget = await readlink(join(profileDir, 'SingletonLock'))
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw new Error(`read Chrome profile lock failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+  const match = /-(\d+)$/.exec(lockTarget)
+  if (!match) throw new Error(`Chrome profile lock has an invalid target: ${lockTarget}`)
+  const pid = Number(match[1])
+  if (processAlive(pid)) throw new Error(`Chrome profile is already locked by live pid ${pid}`)
+  for (const name of lockNames) {
+    try {
+      await unlink(join(profileDir, name))
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw new Error(`remove stale Chrome profile lock ${name} failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+  }
+  log(`removed stale Chrome profile locks for exited pid ${pid}`)
 }
 
 async function terminateLaunchedBrowser(log: (s: string) => void, reason: string): Promise<void> {
@@ -168,6 +198,7 @@ export async function ensureBrowser(log: (s: string) => void = () => {}): Promis
     return false
   }
   await mkdir(PROFILE_DIR, { recursive: true })
+  await clearStaleChromeLocks(PROFILE_DIR, log)
   const ozonePlatform = chromeOzonePlatform()
   log(`launching Chrome (profile=${PROFILE_DIR}, cdp=${CDP_PORT}, ozone=${ozonePlatform || 'default'})`)
   const chromeArgs = [
@@ -181,6 +212,7 @@ export async function ensureBrowser(log: (s: string) => void = () => {}): Promis
     '--disable-session-crashed-bubble',
     '--hide-crash-restore-bubble',
     '--disable-features=Translate',
+    ...(chromeHeadless() ? ['--headless=new', '--disable-gpu'] : []),
     ...(ozonePlatform ? [`--ozone-platform=${ozonePlatform}`] : []),
     'about:blank',
   ]

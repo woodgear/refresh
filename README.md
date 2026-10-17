@@ -159,6 +159,7 @@ http://127.0.0.1:${WEB_PORT}
 | `RADAR_PROFILE_DIR` | 受管 Chrome profile 目录 | `./profiles/main` |
 | `RADAR_CHROME_BIN` | Chrome 可执行文件 | 自动探测 |
 | `RADAR_CHROME_OZONE_PLATFORM` | Chrome Ozone 平台，例如 `wayland` | 检测到 `WAYLAND_DISPLAY` 时为 `wayland` |
+| `RADAR_CHROME_HEADLESS` | 自管 Chrome 是否使用 headless CDP（服务器默认 `1`；可见登录时设为 `0`） | `0` |
 | `RADAR_PROXY` | 媒体下载代理 | `http://127.0.0.1:7890` |
 | `REFRESH_API_TARGET` | Vite 反代的后端地址 | `http://localhost:3001` |
 | `REFRESH_ALLOWED_HOSTS` | Vite 允许访问的 host，逗号分隔 | 未设置 |
