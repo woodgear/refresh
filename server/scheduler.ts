@@ -2,6 +2,10 @@
 // ok 的账号按源串行创建 scheduled RefreshWindow；logged_out 的跳过不空转。
 // 开关/间隔是运行时可改的单例资源（GET/PATCH /api/v1/scheduler），落盘 SQLite ResourceStore；
 // 环境变量只作为无配置文件时的初始默认（RADAR_SCHEDULER=off、RADAR_SCHEDULE_INTERVAL_MS）。
+//
+// 节奏带抖动：每轮的实际间隔是 intervalMs ±JITTER_RATIO 内的随机值，而不是严格等距。
+// 采集走的是真实登录态浏览器，固定的 24/7 等距节奏是这套东西最像机器人的信号；
+// 抖动只影响"什么时候抓"，不影响"抓什么"，也不改 intervalMs 本身的语义。
 
 import { ACCOUNTS, SOURCES } from './config'
 import { checkAuth } from './auth'
@@ -17,9 +21,11 @@ interface SchedulerSpec {
 }
 
 const MIN_INTERVAL_MS = 60_000
+// 每轮间隔的随机浮动比例：30 分钟 → 24~36 分钟。
+const JITTER_RATIO = 0.2
 
 let spec: SchedulerSpec = { enabled: true, intervalMs: 30 * 60 * 1000 }
-let timer: ReturnType<typeof setInterval> | null = null
+let timer: ReturnType<typeof setTimeout> | null = null
 let bootstrapTimer: ReturnType<typeof setTimeout> | null = null
 let roundInProgress = false
 let lastRoundAt: string | null = null
@@ -47,8 +53,30 @@ export async function initScheduler(): Promise<void> {
   apply(true)
 }
 
+export function jitterDelayFor(intervalMs: number): number {
+  const delta = intervalMs * JITTER_RATIO
+  return Math.round(intervalMs - delta + Math.random() * 2 * delta)
+}
+
+function jitteredDelay(): number {
+  return jitterDelayFor(spec.intervalMs)
+}
+
+// 单次定时器接力，而不是 setInterval：每轮结束后重新抽一次间隔。
+function scheduleRound(delayMs: number): void {
+  if (timer) clearTimeout(timer)
+  timer = setTimeout(() => {
+    timer = null
+    void runRound().finally(() => {
+      if (spec.enabled) scheduleRound(jitteredDelay())
+      else nextRoundAt = null
+    })
+  }, delayMs)
+  nextRoundAt = new Date(Date.now() + delayMs).toISOString()
+}
+
 function apply(bootstrap = false): void {
-  if (timer) clearInterval(timer)
+  if (timer) clearTimeout(timer)
   if (bootstrapTimer) clearTimeout(bootstrapTimer)
   timer = null
   bootstrapTimer = null
@@ -57,15 +85,20 @@ function apply(bootstrap = false): void {
     rlog('scheduler', 'disabled')
     return
   }
-  rlog('scheduler', `enabled, every ${Math.round(spec.intervalMs / 1000)}s`)
-  timer = setInterval(() => void runRound(), spec.intervalMs)
-  nextRoundAt = new Date(Date.now() + spec.intervalMs).toISOString()
+  rlog('scheduler', `enabled, every ${Math.round(spec.intervalMs / 1000)}s ±${Math.round(JITTER_RATIO * 100)}%`)
   if (bootstrap) {
-    // 启动后先补一轮，否则反复重启会永远等不满首个间隔
+    // 启动后先补一轮，否则反复重启会永远等不满首个间隔；补的那轮之后才进抖动节奏
     const delay = Math.min(spec.intervalMs, 60_000)
-    bootstrapTimer = setTimeout(() => void runRound(), delay)
+    bootstrapTimer = setTimeout(() => {
+      bootstrapTimer = null
+      void runRound().finally(() => {
+        if (spec.enabled) scheduleRound(jitteredDelay())
+      })
+    }, delay)
     nextRoundAt = new Date(Date.now() + delay).toISOString()
+    return
   }
+  scheduleRound(jitteredDelay())
 }
 
 export function schedulerResource(): Resource {
@@ -92,7 +125,7 @@ export async function patchScheduler(patch: { enabled?: unknown; intervalMs?: un
 }
 
 export function stopScheduler(): void {
-  if (timer) clearInterval(timer)
+  if (timer) clearTimeout(timer)
   if (bootstrapTimer) clearTimeout(bootstrapTimer)
   timer = null
   bootstrapTimer = null
@@ -105,7 +138,7 @@ async function runRound(): Promise<void> {
   }
   roundInProgress = true
   lastRoundAt = new Date().toISOString()
-  nextRoundAt = new Date(Date.now() + spec.intervalMs).toISOString()
+  nextRoundAt = new Date(Date.now() + jitteredDelay()).toISOString()
   try {
     for (const account of ACCOUNTS) {
       if (!spec.enabled) break // 轮中被关闭则尽快收手
