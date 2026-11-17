@@ -73,6 +73,11 @@ function database(): Database {
   return db
 }
 
+/** 供维护任务（retention/压缩）直接使用底层连接；业务读写仍走 store 的导出函数。 */
+export function resourceDatabase(): Database {
+  return database()
+}
+
 async function initialize(paths: StorePaths): Promise<void> {
   const path = join(paths.dataDir, DB_FILE)
   const extensionPath = litectlExtensionPath()

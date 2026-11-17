@@ -3,7 +3,6 @@
 
 import { getAccount } from './config'
 import { closeTab, ensureBrowser, openSession, sleep } from './cdp'
-import { accountStatus } from './resources'
 import { putStoredResource } from './store'
 import { AccountStatusResource } from './resource-definitions'
 
@@ -20,7 +19,6 @@ export async function checkAuth(accountName: string, log: (s: string) => void = 
   const account = getAccount(accountName)
   const finish = async (r: Omit<AuthResult, 'lastChecked'>): Promise<AuthResult> => {
     const result = { ...r, lastChecked: new Date().toISOString() }
-    accountStatus.set(accountName, result as unknown as Record<string, unknown>)
     await putStoredResource({
       apiVersion: 'radar/v1',
       kind: AccountStatusResource.kind,

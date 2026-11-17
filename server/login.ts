@@ -9,8 +9,8 @@ import { randomUUID } from 'crypto'
 import { getAccount, SOURCES } from './config'
 import { closeTab, ensureBrowser, openSession, CdpSession } from './cdp'
 import { checkAuth } from './auth'
+import { setAccountStatus } from './resources'
 import { createRefreshWindow } from './refresh'
-import { accountStatus } from './resources'
 import type { Resource } from './store'
 import { rlog } from './logger'
 
@@ -489,11 +489,13 @@ export function listLoginSessions(): Resource[] {
 // ---------- 收尾 ----------
 
 async function succeed(state: LoginSessionState): Promise<void> {
+  // 先把 auth=ok 落库再翻 phase：调用方轮询到 Succeeded 时状态必须已经可读
+  await setAccountStatus(state.account, { auth: 'ok', lastChecked: new Date().toISOString() })
   state.phase = 'Succeeded'
   state.challenge = null
   await cleanup(state)
-  void checkAuth(state.account)
-  accountStatus.set(state.account, { auth: 'ok', lastChecked: new Date().toISOString() })
+  // 延后复查：登录刚成功，立刻 checkAuth 可能因为页面还没稳定把状态翻回 logged_out
+  setTimeout(() => { void checkAuth(state.account) }, 1500)
   firePostLogin(state)
 }
 

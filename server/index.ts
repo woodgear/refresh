@@ -6,7 +6,6 @@ import { apiV1 } from './api'
 import { rssApp } from './rss'
 import { ensureDirs } from './store'
 import { initMedia } from './media'
-import { buildIndex } from './resources'
 import { buildFolloweeIndex } from './followees'
 import { initScheduler } from './scheduler'
 import { rlog } from './logger'
@@ -63,7 +62,6 @@ app.get('/metrics', () => new Response(metricsText(), { headers: { 'Content-Type
 // 资源 API + RSS（docs/design.md）
 await ensureDirs()
 await initMedia()
-await buildIndex()
 await buildFolloweeIndex()
 app.route('/api/v1', apiV1)
 app.route('/rss', rssApp)

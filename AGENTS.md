@@ -31,7 +31,9 @@ server/
   resource-definitions.ts    # public kind → storage kind、schema、Status kind
   litectl-resource-facade.ts # public 信封与 subject/Status/link 的原子拆装
   litectl-migration.ts       # 旧自研 SQLite ResourceStore → litectl V2 一次性迁移
-  resources.ts    # 内存索引（Message/Author/Window）、labelSelector 查询、未读计数
+  resources.ts    # 读写的业务层：写入时 normalize、读时直查 SQLite（不再有内存索引）
+  queries.ts      # 查询下推：labelSelector / 未读 / 排序 / limit 全部拼成 SQL
+  retention.ts    # 保留策略：超龄 window + 孤儿 message/author/overlay/media + events compact
   normalize.ts    # raw → spec（每平台一个 normalizer，新旧 schema 都容忍）
   refresh.ts      # RefreshWindow 执行器：统一抓取入口，Pending→Running→终态，watch 事件
   feed-sessions.ts # 单 source generation/page 状态机、持久化 cursor 与 page archive
@@ -55,11 +57,14 @@ src/
   components/Sidebar.tsx   # 源导航+未读badge+登录状态点+每源刷新；移动端做抽屉复用
   components/MessageCard.tsx # 卡片（list/grid 两形态、lightbox、视口自动已读）
   components/VirtualizedFeed.tsx # feed 渲染：list 走 react-virtuoso，grid 走窗口化多列瀑布流（按列堆叠、只挂载视口附近卡片）
+  components/VirtualizedFeed.tsx # feed 渲染：list 走 react-virtuoso，grid 走窗口化多列瀑布流（按列堆叠、只挂载视口附近卡片）
   components/LoginBanner.tsx # 未登录横幅 + 扫码弹窗
   components/AdminPage.tsx   # 管理页：账号状态/调度器开关/日志 tail
   hooks/useFeedSession.ts    # UI generation 复用、分页、触底续页、重试与重开状态机
   routes/index.tsx           # FeedSession feed（工具条+已读管线）/ 刷新历史 / 管理三个视图
 scripts/migrate-legacy.ts    # 旧 data/*.json → window 档案（幂等，已跑过）
+scripts/retention.ts         # 保留策略入口：默认 dry-run，--apply 才真删
+scripts/rebuild-index.ts     # 用当前 normalizer 重算历史 message（默认 dry-run）
 verify.sh                    # 回归套件（也是验收清单的可执行形式）
 data/（gitignore）
   refresh.db       # litectl V2：资源、独立 Status、labels、links、events
@@ -79,6 +84,13 @@ data/（gitignore）
 5. **多源归属**：同一条内容被多个源推到时，归属是集合（`radar/sources` annotation），`source=` selector 按集合匹配。消息名带平台前缀全局唯一（`twitter-<id>` / `zhihu-<id>` / `bilibili-<bvid>`）。
 6. **登录态在自管 Chrome 的 profile 里**（`profiles/main`，gitignore）：抓取/检测/登录引导全走 CDP，零外部工具依赖。
 7. **媒体本地化**：图片下载到本地（`/api/v1/media/<hash>`），视频不下载（poster + `media-proxy` 流式代理播放）。直连失败自动走代理（`RADAR_PROXY`，默认 127.0.0.1:7890，Bun 不读系统代理）。
+8. **读路径直查 SQLite，没有全量内存索引**：`resources.ts` 的查询全部走 `queries.ts` 拼出的 SQL，
+   labelSelector / 未读 / 排序 / limit 都在库里完成，一页只取需要的行再合并 overlay。
+   启动不再重放 window，所以 **normalize 只在写入时执行**：改了 normalizer 想让历史数据生效，
+   要显式跑 `scripts/rebuild-index.ts`，重启不会自动重算。
+9. **保留策略**：`scripts/retention.ts` 默认 dry-run。判据是「抓取/最后出现时间」不是内容时间；
+   message 按 `radar/lastSeenWindow` 判定（window-item 还在就能重放出来，所以不能用 updated_at）。
+   `followee-window` 故意不删 —— 关注列表是从这些窗口重放出来的。
 
 ## API 速查
 

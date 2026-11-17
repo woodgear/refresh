@@ -92,6 +92,10 @@ verify.sh 全绿（A1-A4, A6, A9）且 A5/A7/A8 均为 [A] awaiting-user → loo
 
 （每轮迭代在此追加一行：日期 / 完成项 / 备注）
 
+- 2026-11-18 / 读路径直查 SQLite + 保留策略 / 起因：一次重启让站点歇业 8 分 48 秒、常驻 5.2GB —— SQLite 只当了磁盘，`buildIndex()` 仍把 73,555 条 message 的完整 spec（含 raw）重放进内存 Map。现在 `server/queries.ts` 把 labelSelector / source 集合归属 / 未读 / 排序 / limit 全部拼成 SQL，`resources.ts` 只取当前页的行再合并 overlay（按 name 批量，不再整表读 overlay）；`buildIndex` 删除，启动不再重放 window。实测真实库（73k message / 3.5k window）启动 **4 秒**（原 8 分 48 秒），RSS **219MB**（原 5.2GB 常驻 / 7.8GB 峰值），`/messages?limit=50` 165ms、`/unread-counts` 188ms。代价是 normalize 只在写入时执行，改 normalizer 要显式跑 `scripts/rebuild-index.ts`。
+
+  同时新增 `server/retention.ts` + `scripts/retention.ts`：按抓取时间删超龄 window（连带 items/page）、孤儿 message/author/overlay/media，最后 compact 掉 cutoff 之前的事件。两个判据踩过的坑：**followee-window 不能删**（关注列表是从它重放的，删了重启后空掉）；**message 不能按 updated_at 判**（window-item 还在就会重放把删掉的 message 复活），要用 `radar/lastSeenWindow`。7 天 dry-run：1,290 window / 58,884 items / 25,365 message / 45,003 media 文件（13.4GB）。verify 140 断言全绿。
+
 - 2026-11-17 / 网格布局改真瀑布流 + 窗口裁剪 / 原 grid 把卡片按固定行分组 + `items-stretch` + 卡片 `h-full`，行内矮卡被拉到同行最高卡的高度，B 站动态和短推文下方出现 150–450px 空白（看起来像空卡片）。`VirtualizedFeed` 拆成 `ListFeed`（保持 react-virtuoso）与 `MasonryFeed`（按列 round-robin 分配、列内 flex 堆叠、卡片按自身高度）。
 
   瀑布流本身会被会话累积的卡片数拖慢（refresh 不常看，一次能攒几百上千条），所以 `MasonryFeed` 同时做窗口裁剪：`ResizeObserver` + 每轮 layout 同步量出已渲染卡片高度，量不到的先按封面比例和文本行数估，列内用 `paddingTop`/`paddingBottom` 撑出未渲染部分，只挂载视口上下各 1.5 屏的卡片。实测 327 条会话里 DOM 只挂 10–20 张卡，滚动帧间隔 p50/p95/max = 16.7/16.8/16.8ms（满 60fps）；改前全量渲染 123 张时 p95 是 16.7ms、最差单帧 83ms。

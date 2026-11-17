@@ -77,6 +77,16 @@ export function listRefreshResources(database: Database, definition: ResourceDef
   return readRows(database, definition).map(row => fromStorageResource(definition, row))
 }
 
+/** 按 name 批量取（一页 40–300 条），SQL 里用 IN，不整表扫描。 */
+export function listRefreshResourcesByNames(
+  database: Database,
+  definition: ResourceDefinition,
+  names: string[],
+): Resource[] {
+  if (names.length === 0) return []
+  return readRows(database, definition, { names }).map(row => fromStorageResource(definition, row))
+}
+
 export function listRefreshResourcesLinkedTo(
   database: Database,
   definition: ResourceDefinition,
@@ -87,6 +97,23 @@ export function listRefreshResourcesLinkedTo(
   return readRows(database, definition, {
     linkTarget: { relation, definition: targetDefinition, name: targetName },
   }).map(row => fromStorageResource(definition, row))
+}
+
+/** 删除资源；不存在时返回 false。status 由 litectl 一并处理，labels/links 随外键级联删除。 */
+export function deleteRefreshResource(
+  database: Database,
+  definition: ResourceDefinition,
+  name: string,
+): boolean {
+  try {
+    database
+      .query<{ rv: number }, [string, string, string]>('SELECT litectl_delete(?, ?, ?) AS rv')
+      .get(definition.apiVersion, definition.storageKind, name)
+    return true
+  } catch (error) {
+    if (error instanceof Error && /not found/i.test(error.message)) return false
+    throw error
+  }
 }
 
 function applyRefreshResource(database: Database, resource: Resource): void {
@@ -257,11 +284,14 @@ function readRows(
   definition: ResourceDefinition,
   selector: {
     name?: string
+    names?: string[]
     linkTarget?: { relation: string; definition: ResourceDefinition; name: string }
   } = {},
 ): ResourceRow[] {
   const statusKind = definition.statusStorageKind ?? ''
-  const namePredicate = selector.name === undefined ? '' : 'AND subject.name = ?'
+  const namePredicate = selector.names
+    ? `AND subject.name IN (${selector.names.map(() => '?').join(',') || 'NULL'})`
+    : selector.name === undefined ? '' : 'AND subject.name = ?'
   const linkPredicate = selector.linkTarget === undefined
     ? ''
     : `AND EXISTS (
@@ -304,15 +334,14 @@ function readRows(
       STATUS_CONTROLLER,
       definition.apiVersion,
       definition.storageKind,
-      ...(selector.name === undefined ? [] : [selector.name]),
-      ...(selector.linkTarget === undefined
-        ? []
-        : [
-            selector.linkTarget.relation,
-            selector.linkTarget.definition.apiVersion,
-            selector.linkTarget.definition.storageKind,
-            selector.linkTarget.name,
-          ]),
+      ...(selector.names ?? []),
+      ...(selector.name !== undefined ? [selector.name] : []),
+      ...(selector.linkTarget ? [
+        selector.linkTarget.relation,
+        selector.linkTarget.definition.apiVersion,
+        selector.linkTarget.definition.storageKind,
+        selector.linkTarget.name,
+      ] : []),
     )
 }
 
