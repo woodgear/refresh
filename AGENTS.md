@@ -57,7 +57,6 @@ src/
   components/Sidebar.tsx   # 源导航+未读badge+登录状态点+每源刷新；移动端做抽屉复用
   components/MessageCard.tsx # 卡片（list/grid 两形态、lightbox、视口自动已读）
   components/VirtualizedFeed.tsx # feed 渲染：list 走 react-virtuoso，grid 走窗口化多列瀑布流（按列堆叠、只挂载视口附近卡片）
-  components/VirtualizedFeed.tsx # feed 渲染：list 走 react-virtuoso，grid 走窗口化多列瀑布流（按列堆叠、只挂载视口附近卡片）
   components/LoginBanner.tsx # 未登录横幅 + 扫码弹窗
   components/AdminPage.tsx   # 管理页：账号状态/调度器开关/日志 tail
   hooks/useFeedSession.ts    # UI generation 复用、分页、触底续页、重试与重开状态机
