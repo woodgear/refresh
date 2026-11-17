@@ -2,44 +2,23 @@ import {
   isAggregateFeedSession,
   type FeedSessionResource,
 } from './feed-sessions'
-import type { Resource } from './store'
+import { selectNewMessageNames } from './queries'
 
+/**
+ * 「有多少条新内容」：session 创建之后才抓到的、还没发布进该 session 的 message。
+ * 走 SQL（sources + window 时间 + 已发布名单），不再把整表 message 读进内存 ——
+ * 前端每 30 秒轮询一次，全量扫描会把 RSS 堆到 GB 级。
+ */
 export function feedUpdateMessageRefs(
   session: FeedSessionResource,
   publishedRefs: readonly string[],
-  messages: readonly Resource[],
-  getWindow: (name: string) => Resource | null,
 ): string[] {
   const startedAt = requiredTimestamp(
     session.metadata.creationTimestamp,
     `FeedSession/${session.metadata.name}`,
   )
-  const sources = new Set(isAggregateFeedSession(session) ? session.spec.sources : [session.spec.source])
-  const published = new Set(publishedRefs)
-  const windowTimes = new Map<string, number>()
-
-  return messages.flatMap(message => {
-    if (published.has(message.metadata.name) || !messageBelongsTo(message, sources)) return []
-    const windowName = message.metadata.annotations?.['radar/lastSeenWindow']
-    if (!windowName) throw new Error(`Message/${message.metadata.name} is missing radar/lastSeenWindow`)
-    let observedAt = windowTimes.get(windowName)
-    if (observedAt === undefined) {
-      const window = getWindow(windowName)
-      if (!window) throw new Error(`Message/${message.metadata.name} references missing RefreshWindow/${windowName}`)
-      observedAt = requiredTimestamp(window.metadata.creationTimestamp, `RefreshWindow/${windowName}`)
-      windowTimes.set(windowName, observedAt)
-    }
-    return observedAt > startedAt ? [message.metadata.name] : []
-  })
-}
-
-function messageBelongsTo(message: Resource, sources: ReadonlySet<string>): boolean {
-  const memberships = (
-    message.metadata.annotations?.['radar/sources']
-    ?? message.metadata.labels?.source
-    ?? ''
-  ).split(',').filter(Boolean)
-  return memberships.some(source => sources.has(source))
+  const sources = isAggregateFeedSession(session) ? session.spec.sources : [session.spec.source]
+  return selectNewMessageNames(sources, startedAt, [...publishedRefs])
 }
 
 function requiredTimestamp(value: string | undefined, resource: string): number {

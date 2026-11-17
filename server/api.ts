@@ -9,7 +9,6 @@ import {
   listAuthors,
   listMessages,
   listWindowResources,
-  messageResources,
   unreadCounts,
 } from './resources'
 import {
@@ -531,7 +530,7 @@ apiV1.get('/feedsessions/:name/updates', async c => {
     const publishedRefs = isAggregateFeedSession(session)
       ? await defaultAggregateFeedSessionService().messageRefs(sessionName, session)
       : await defaultFeedSessionService().messageRefs(sessionName)
-    const messageRefs = feedUpdateMessageRefs(session, publishedRefs, messageResources(), getWindowResource)
+    const messageRefs = feedUpdateMessageRefs(session, publishedRefs)
     return c.json({ count: messageRefs.length })
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, feedSessionErrorStatus(err))

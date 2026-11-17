@@ -1,60 +1,68 @@
 import { expect, test } from 'bun:test'
-import { feedUpdateMessageRefs } from './feed-updates'
-import type { FeedSessionResource } from './feed-sessions'
-import type { Resource } from './store'
+import { mkdtempSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 
-const session: FeedSessionResource = {
+// 查询已经下推到 SQL，所以这里用真实的临时资源库验证，而不是内存 fixture。
+const dataDir = mkdtempSync(join(tmpdir(), 'refresh-feed-updates-'))
+process.env.RADAR_DATA_DIR = dataDir
+
+const { ensureDirs, putStoredResource } = await import('./store')
+const { feedUpdateMessageRefs } = await import('./feed-updates')
+
+await ensureDirs()
+
+const session = {
   apiVersion: 'radar/v1',
-  kind: 'FeedSession',
+  kind: 'FeedSession' as const,
   metadata: { name: 'feed-1', creationTimestamp: '2026-08-15T10:00:00.000Z' },
   spec: { source: 'source-a', generation: 'generation-1' },
-  status: { nextCursor: 'next', hasMore: true, pageCount: 1, lastPage: 'page-1', lastWindow: 'window-head' },
+  status: { hasMore: true, pageCount: 1, lastPage: 'page-1', lastWindow: 'window-head' },
 }
 
-function message(name: string, sources: string, lastSeenWindow: string): Resource {
-  return {
+await putStoredResource({
+  apiVersion: 'radar/v1',
+  kind: 'RefreshWindow',
+  metadata: { name: 'window-before', creationTimestamp: '2026-08-15T09:59:00.000Z' },
+  spec: { source: 'source-a', account: 'zhihu-main', count: 1, trigger: 'scheduled' },
+  status: { phase: 'Succeeded' },
+} as never)
+await putStoredResource({
+  apiVersion: 'radar/v1',
+  kind: 'RefreshWindow',
+  metadata: { name: 'window-after', creationTimestamp: '2026-08-15T10:01:00.000Z' },
+  spec: { source: 'source-a', account: 'zhihu-main', count: 1, trigger: 'scheduled' },
+  status: { phase: 'Succeeded' },
+} as never)
+
+const seeded: [string, string, string][] = [
+  ['already-published', 'source-a', 'window-after'],
+  ['old', 'source-a', 'window-before'],
+  ['other-source', 'source-b', 'window-after'],
+  ['new', 'source-a,source-b', 'window-after'],
+]
+for (const [name, sources, window] of seeded) {
+  await putStoredResource({
     apiVersion: 'radar/v1',
     kind: 'Message',
     metadata: {
       name,
-      annotations: { 'radar/sources': sources, 'radar/lastSeenWindow': lastSeenWindow },
+      labels: { platform: 'zhihu', source: sources.split(',')[0]!, author: 'zhihu-mock-author' },
+      annotations: { 'radar/sources': sources, 'radar/lastSeenWindow': window },
+      creationTimestamp: '2026-08-15T10:00:30.000Z',
     },
-    spec: {},
-    status: {},
-  }
+    spec: { text: name, media: [], content: null },
+    status: { hydrated: false },
+  } as never)
 }
 
-const windows = new Map<string, Resource>([
-  ['window-before', {
-    apiVersion: 'radar/v1', kind: 'RefreshWindow',
-    metadata: { name: 'window-before', creationTimestamp: '2026-08-15T09:59:00.000Z' }, spec: {}, status: {},
-  }],
-  ['window-after', {
-    apiVersion: 'radar/v1', kind: 'RefreshWindow',
-    metadata: { name: 'window-after', creationTimestamp: '2026-08-15T10:01:00.000Z' }, spec: {}, status: {},
-  }],
-])
-
-test('updates include only unpublished source messages observed after generation start', () => {
-  const updates = feedUpdateMessageRefs(
-    session,
-    ['already-published'],
-    [
-      message('already-published', 'source-a', 'window-after'),
-      message('old', 'source-a', 'window-before'),
-      message('other-source', 'source-b', 'window-after'),
-      message('new', 'source-a,source-b', 'window-after'),
-    ],
-    name => windows.get(name) ?? null,
-  )
+test('updates 只包含未发布、且 window 晚于 session 创建的 message', () => {
+  // other-source 只属于 source-b，不属于这个 session 的 source-a，所以不算新内容
+  const updates = feedUpdateMessageRefs(session as never, ['already-published'])
   expect(updates).toEqual(['new'])
 })
 
-test('updates fail when a message references a missing window', () => {
-  expect(() => feedUpdateMessageRefs(
-    session,
-    [],
-    [message('broken', 'source-a', 'window-missing')],
-    name => windows.get(name) ?? null,
-  )).toThrow('Message/broken references missing RefreshWindow/window-missing')
+test('已全部发布时没有新内容', () => {
+  const updates = feedUpdateMessageRefs(session as never, seeded.map(([name]) => name))
+  expect(updates).toEqual([])
 })

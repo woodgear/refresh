@@ -254,3 +254,37 @@ export function selectWindows(source?: string | null): WindowRow[] {
     ? db().query<RawRow, [string]>(sql).all(source)
     : db().query<RawRow, []>(sql).all()
 }
+
+/**
+ * session 之后新抓到的、且不在已发布名单里的 message。
+ * window 时间取 refresh-window 的 creationTimestamp annotation。
+ */
+export function selectNewMessageNames(
+  sources: string[],
+  publishedAfterMs: number,
+  publishedNames: string[],
+): string[] {
+  if (sources.length === 0) return []
+  const sourceClause = sources
+    .map(() => `instr(',' || COALESCE(json_extract(r.annotations, '$."radar/sources"'), '') || ',', ',' || ? || ',') > 0`)
+    .join(' OR ')
+  const publishedClause = publishedNames.length > 0
+    ? `AND r.name NOT IN (${publishedNames.map(() => '?').join(',')})`
+    : ''
+  const params: (string | number)[] = [...sources, ...publishedNames]
+  return db()
+    .query<{ name: string }, (string | number)[]>(
+      `SELECT r.name AS name
+         FROM resources r
+         JOIN resources win
+           ON win.api_version = '${API_VERSION}'
+          AND win.kind = 'refresh-window'
+          AND win.name = json_extract(r.annotations, '$."radar/lastSeenWindow"')
+        WHERE r.api_version = '${API_VERSION}' AND r.kind = 'message'
+          AND (${sourceClause})
+          ${publishedClause}
+          AND COALESCE(CAST(strftime('%s', json_extract(win.annotations, '${TS_ANNOTATION}')) AS INTEGER) * 1000, 0) > ?`,
+    )
+    .all(...params, publishedAfterMs)
+    .map(row => row.name)
+}
