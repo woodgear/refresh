@@ -92,6 +92,12 @@ verify.sh 全绿（A1-A4, A6, A9）且 A5/A7/A8 均为 [A] awaiting-user → loo
 
 （每轮迭代在此追加一行：日期 / 完成项 / 备注）
 
+- 2026-11-17 / 网格布局改真瀑布流 + 窗口裁剪 / 原 grid 把卡片按固定行分组 + `items-stretch` + 卡片 `h-full`，行内矮卡被拉到同行最高卡的高度，B 站动态和短推文下方出现 150–450px 空白（看起来像空卡片）。`VirtualizedFeed` 拆成 `ListFeed`（保持 react-virtuoso）与 `MasonryFeed`（按列 round-robin 分配、列内 flex 堆叠、卡片按自身高度）。
+
+  瀑布流本身会被会话累积的卡片数拖慢（refresh 不常看，一次能攒几百上千条），所以 `MasonryFeed` 同时做窗口裁剪：`ResizeObserver` + 每轮 layout 同步量出已渲染卡片高度，量不到的先按封面比例和文本行数估，列内用 `paddingTop`/`paddingBottom` 撑出未渲染部分，只挂载视口上下各 1.5 屏的卡片。实测 327 条会话里 DOM 只挂 10–20 张卡，滚动帧间隔 p50/p95/max = 16.7/16.8/16.8ms（满 60fps）；改前全量渲染 123 张时 p95 是 16.7ms、最差单帧 83ms。
+
+  没有虚拟列表后要自己补的三件事：位置恢复（先把 anchor 塞进渲染范围、量到高度后再对齐，`ListFeed` 首帧忽略 virtuoso 的 `startIndex 0` 避免覆盖已存位置）、阅读位置记录（滚动帧内只做触底判断，停滚 400ms 后再测量顶部卡片）、触底续页（滚到底自动 `loadMore`，追加一页后仍在底部则继续）。空内容动态卡（raw 里无正文/媒体）在 `MessageCard` 里加"（这条动态没有正文或媒体）"占位。verify 140 断言全绿，`bunx tsc --noEmit` 与 `pnpm build` 通过。
+
 - 2026-06-10 / M5 / rss.ts(/rss/{source}.xml+all.xml, CDATA+媒体绝对地址, 正文内图也本地化重写) 前端整体迁REST(api/radar.ts hooks; Sidebar状态点+按源刷新+SSE日志; MessageCard头像/图/引用/转推/展开全文; LoginBanner QR弹窗3s镜像+2s轮询; windows浏览视图) tRPC/旧fetch.sh/server trpc.ts全部退役。启动预热checkAuth(RADAR_AUTH_PRECHECK)。UI经受管Chrome截图自检OK。verify 47断言全绿。A7/A8标[A]待用户验收。
 - 2026-06-10 / M4 / scheduler.ts: 30min(RADAR_SCHEDULE_INTERVAL_MS可覆盖)每轮先checkAuth,ok账号按源串行创建scheduled window(waitWindowDone防并发tab),logged_out跳过;轮间互斥。RADAR_AUTH_MOCK新增ok档。verify 41断言全绿(A6: 登出跳过+周期创建)。
 - 2026-06-10 / M3.1-M3.4 / auth.ts(checkAuth: zhihu /api/v4/me、twitter /home重定向、RADAR_AUTH_MOCK开关) login.ts(LoginSession: 知乎qr/推特window、QR区域截图镜像、TTL 10min、成功→关tab→翻状态→post-login补抓全源)。verify 38断言全绿(含mock登录闭环)。实测已登录态: 创建session即Succeeded并触发补抓。zhihu/follow adapter不稳→该源也切CDP(moments API,同schema)。真实扫码A5留用户验收[A]。

@@ -1,7 +1,7 @@
 import { SOURCES, type Message, type MediaRef, type ResourceMeta } from '@/api/radar'
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'
 import { Heart, MessageCircle, Repeat2, Eye, ArrowUp, Clock, Repeat, ExternalLink, Circle, CheckCircle2 } from 'lucide-react'
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { memo, type ReactNode, useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { ProgressiveImage } from '@/components/ProgressiveImage'
 import { recordPerfSample } from '@/observability'
@@ -118,7 +118,7 @@ interface MessageCardProps {
   layout?: 'list' | 'grid'
 }
 
-export function MessageCard({ message, priority = false, onSeen, onToggleRead, layout = 'list' }: MessageCardProps) {
+export const MessageCard = memo(function MessageCard({ message, priority = false, onSeen, onToggleRead, layout = 'list' }: MessageCardProps) {
   const { spec, metadata } = message
   const platform = metadata.labels?.platform
   const read = !!message.status.read
@@ -165,6 +165,14 @@ export function MessageCard({ message, priority = false, onSeen, onToggleRead, l
   const showPreviewText = !!spec.text && !(showContent && spec.content)
   const isBilibiliVideo = platform === 'bilibili' && /^bilibili-BV[0-9A-Za-z]+/.test(metadata.name)
   const isBilibiliDynamic = platform === 'bilibili' && !isBilibiliVideo
+  // 有些动态（转发、已删除内容）raw 里没有正文和媒体，卡片只剩作者行；
+  // 给一句占位说明，避免看起来像一张坏掉的空卡片。
+  const hasBody =
+    !!spec.text ||
+    !!spec.content ||
+    !!spec.title ||
+    spec.media.length > 0 ||
+    !!spec.quotedSnapshot?.text
 
   return (
     <Card
@@ -277,6 +285,9 @@ export function MessageCard({ message, priority = false, onSeen, onToggleRead, l
       </CardHeader>
 
       <CardContent className={cn('space-y-2 px-4 pb-3 md:px-5', isGrid && 'px-3 md:px-4')}>
+        {!hasBody && (
+          <p className="text-xs text-muted-foreground">（这条动态没有正文或媒体）</p>
+        )}
         {showPreviewText && (
           <p
             className={cn(
@@ -428,4 +439,4 @@ export function MessageCard({ message, priority = false, onSeen, onToggleRead, l
       )}
     </Card>
   )
-}
+})
