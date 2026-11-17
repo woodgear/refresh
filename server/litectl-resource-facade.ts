@@ -111,7 +111,8 @@ export function deleteRefreshResource(
       .get(definition.apiVersion, definition.storageKind, name)
     return true
   } catch (error) {
-    if (error instanceof Error && /not found/i.test(error.message)) return false
+    // litectl 返回的是 {code:'not_found'} 形式的 JSON
+    if (error instanceof Error && /not[ _]?found/i.test(error.message)) return false
     throw error
   }
 }

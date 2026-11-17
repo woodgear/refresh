@@ -150,13 +150,13 @@ export async function runRetention(options: RetentionOptions = {}): Promise<Rete
       WHERE r.api_version = ? AND r.kind = 'refresh-window-item' AND l.value IN (${placeholders(expiredWindows)})`,
     [API_VERSION, ...expiredWindows],
   )
-  const expiredPages = namesOf(
-    db,
-    `SELECT name FROM resources
-      WHERE api_version = ? AND kind IN ('feed-page', 'aggregate-feed-page', 'feed-source-page')
-        AND created_at < ?`,
-    [API_VERSION, cutoff],
-  )
+  // 三种 page 的 name 空间不同，必须按 kind 分开查再分别删
+  const expiredPagesByKind = {
+    feed: namesOf(db, `SELECT name FROM resources WHERE api_version = ? AND kind = 'feed-page' AND created_at < ?`, [API_VERSION, cutoff]),
+    aggregate: namesOf(db, `SELECT name FROM resources WHERE api_version = ? AND kind = 'aggregate-feed-page' AND created_at < ?`, [API_VERSION, cutoff]),
+    source: namesOf(db, `SELECT name FROM resources WHERE api_version = ? AND kind = 'feed-source-page' AND created_at < ?`, [API_VERSION, cutoff]),
+  }
+  const expiredPages = expiredPagesByKind.feed.length + expiredPagesByKind.aggregate.length + expiredPagesByKind.source.length
 
   // message 的保留判据用 annotation radar/lastSeenWindow：它记录「最后一次出现在哪批推送里」。
   // 不能用 updated_at —— 只要 window-item 还在，下次启动重放 raw 就会把删掉的 message 重建出来；
@@ -230,7 +230,7 @@ export async function runRetention(options: RetentionOptions = {}): Promise<Rete
     dryRun,
     windows: expiredWindows.length,
     windowItems: windowItems.length,
-    feedPages: expiredPages.length,
+    feedPages: expiredPages,
     messages: expiredMessages.length,
     authors: expiredAuthors.length,
     overlays: orphanOverlays.length,
@@ -248,9 +248,9 @@ export async function runRetention(options: RetentionOptions = {}): Promise<Rete
 
   // 先删明细再删汇总：中途失败也不会留下指向不存在目标的链接。
   deleteBatch(db, RefreshWindowItemResource, windowItems)
-  deleteBatch(db, FeedPageResource, expiredPages)
-  deleteBatch(db, AggregateFeedPageResource, expiredPages)
-  deleteBatch(db, FeedSourcePageResource, expiredPages)
+  deleteBatch(db, FeedPageResource, expiredPagesByKind.feed)
+  deleteBatch(db, AggregateFeedPageResource, expiredPagesByKind.aggregate)
+  deleteBatch(db, FeedSourcePageResource, expiredPagesByKind.source)
   deleteBatch(db, OverlayEntryResource, orphanOverlays)
   deleteBatch(db, MessageResource, expiredMessages)
   deleteBatch(db, AuthorResource, expiredAuthors)
