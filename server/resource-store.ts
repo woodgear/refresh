@@ -16,6 +16,7 @@ import {
   RefreshWindowResource,
   SchedulerResource,
   type ResourceDefinition,
+  resourceDefinition,
 } from './resource-definitions'
 import {
   getRefreshResource,
@@ -23,13 +24,14 @@ import {
   listRefreshResources,
   putRefreshResource,
   registerRefreshLitectlKinds,
+  toStorageResource,
 } from './litectl-resource-facade'
 import {
   detectRefreshDatabaseFormat,
   migrateCustomResourceStoreInPlace,
 } from './litectl-migration'
 import { litectlExtensionPath, cleanupLitectlExtensionForTests } from './litectl-extension'
-import { assertLitectlV2Extension, litectlWriteTransaction, openLitectlDatabase } from './litectl-runtime'
+import { applyLitectlResources, assertLitectlV2Extension, litectlWriteTransaction, openLitectlDatabase } from './litectl-runtime'
 
 export interface MediaManifestEntry {
   file: string
@@ -373,11 +375,44 @@ function patchOverlaySync(kind: OverlayKind, name: string, patch: OverlayEntry):
   return entry
 }
 
-/** 批量写：一个事务写完，避免 N 次 fsync（标记已读这类批量操作用）。 */
+/**
+ * 批量写：整批一个事务。
+ *
+ * 没有 status 的 kind（message）走 litectl_apply_many —— 一次 SQL 调用写完；
+ * 有 status 的 kind 只能逐条（status 是独立资源，apply_many 不管它）。
+ */
 export async function putResourcesInStore(resources: Resource[]): Promise<void> {
   if (resources.length === 0) return
+  const byKind = new Map<string, Resource[]>()
+  for (const resource of resources) {
+    const list = byKind.get(resource.kind) ?? []
+    list.push(resource)
+    byKind.set(resource.kind, list)
+  }
   writeTransaction(() => {
-    for (const resource of resources) putResourceSync(resource)
+    for (const [kind, group] of byKind) {
+      const definition = resourceDefinition(kind)
+      if (definition.statusStorageKind) {
+        for (const resource of group) putResourceSync(resource)
+        continue
+      }
+      // 必须走 toStorageResource：它把 metadata.creationTimestamp 搬进 annotations、
+      // 处理 author/media 的字段形态。绕过去会丢 creationTimestamp（排序当场坏掉）。
+      applyLitectlResources(
+        database(),
+        definition.apiVersion,
+        definition.storageKind,
+        group.map(resource => {
+          const storage = toStorageResource(database(), definition, resource)
+          return {
+            name: resource.metadata.name,
+            spec: storage.spec,
+            labels: storage.labels,
+            annotations: storage.annotations,
+          }
+        }),
+      )
+    }
   })
 }
 

@@ -155,7 +155,7 @@ function applyRefreshResource(database: Database, resource: Resource): void {
   })
 }
 
-function toStorageResource(
+export function toStorageResource(
   database: Database,
   definition: ResourceDefinition,
   resource: Resource,

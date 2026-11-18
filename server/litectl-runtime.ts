@@ -79,6 +79,39 @@ export function applyLitectlResource(database: Database, input: ApplyResourceInp
   return row.resourceVersion
 }
 
+/**
+ * 批量 apply：整批一个事务（litectl_apply_many）。
+ *
+ * 单条 apply 每条一次 fsync；标记已读这类批量写（40 条 × 8.7KB）用它省掉
+ * N-1 次事务边界。no-op 条目按 apply 的既有语义短路（rv 不变、不产事件）。
+ */
+export function applyLitectlResources(
+  database: Database,
+  apiVersion: string,
+  storageKind: string,
+  items: { name: string; spec: unknown; labels?: Record<string, string>; annotations?: Record<string, string> }[],
+): number {
+  if (items.length === 0) return 0
+  const row = database
+    .query<{ result: string }, [string, string, string]>(
+      'SELECT litectl_apply_many(?, ?, ?) AS result',
+    )
+    .get(
+      apiVersion,
+      storageKind,
+      JSON.stringify(
+        items.map(item => ({
+          name: item.name,
+          spec: item.spec,
+          labels: item.labels ?? {},
+          annotations: item.annotations ?? {},
+        })),
+      ),
+    )
+  if (!row) throw new Error(`litectl_apply_many returned no result for ${apiVersion}/${storageKind}`)
+  return (JSON.parse(row.result) as { applied: number }).applied
+}
+
 export function readLitectlIdentity(
   database: Database,
   apiVersion: string,
