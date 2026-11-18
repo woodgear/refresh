@@ -13,6 +13,27 @@ import { metricsText, recordHttp } from './observability'
 import { startTracing } from './tracing'
 
 const webDistDir = join(import.meta.dir, '..', 'dist')
+
+/**
+ * 当前部署的前端构建号（dist/index.html 里 index-<hash>.js 的 hash）。
+ *
+ * 前端加载后跑的是**它加载那一刻**的代码，服务端更新了它不会自己变 —— 用户会一直
+ * 对着旧 bundle 撞已经修好的 bug，只能靠手动硬刷新。有了这个标识，前端可以轮询
+ * 对比、发现不一致就自己重载。
+ */
+let buildId = 'dev'
+export function currentBuildId(): string {
+  return buildId
+}
+async function detectBuildId(): Promise<void> {
+  try {
+    const html = await Bun.file(join(webDistDir, 'index.html')).text()
+    const matched = /index-([A-Za-z0-9_-]+)\.js/.exec(html)
+    if (matched) buildId = matched[1]
+  } catch {
+    buildId = 'dev'
+  }
+}
 const staticContentTypes = new Map([
   ['.html', 'text/html; charset=utf-8'],
   ['.js', 'text/javascript; charset=utf-8'],
@@ -63,6 +84,10 @@ app.get('/metrics', () => new Response(metricsText(), { headers: { 'Content-Type
 await ensureDirs()
 await initMedia()
 await buildFolloweeIndex()
+app.get('/api/v1/version', async () => {
+  await detectBuildId()
+  return Response.json({ build: currentBuildId() })
+})
 app.route('/api/v1', apiV1)
 app.route('/rss', rssApp)
 app.get('*', async c => {
