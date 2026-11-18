@@ -5,6 +5,7 @@ import { memo, type ReactNode, useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { ProgressiveImage } from '@/components/ProgressiveImage'
 import { recordPerfSample } from '@/observability'
+import { FullTextDialog } from './FullTextDialog'
 
 function formatNumber(n: number): string {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`
@@ -162,7 +163,8 @@ export const MessageCard = memo(function MessageCard({ message, priority = false
   const cover = isGrid ? spec.media.find(m => m.type === 'image' || m.url || m.originUrl) : undefined
   const sources = messageSourceLabels(metadata)
   const durationLabel = platform === 'bilibili' && spec.durationSec !== undefined ? formatDuration(spec.durationSec) : null
-  const showPreviewText = !!spec.text && !(showContent && spec.content)
+  // 弹窗只负责全文，卡片里的预览保持原样（不然打开弹窗时卡片内容会闪一下）
+  const showPreviewText = !!spec.text
   const isBilibiliVideo = platform === 'bilibili' && /^bilibili-BV[0-9A-Za-z]+/.test(metadata.name)
   const isBilibiliDynamic = platform === 'bilibili' && !isBilibiliVideo
   // 有些动态（转发、已删除内容）raw 里没有正文和媒体，卡片只剩作者行；
@@ -342,25 +344,22 @@ export const MessageCard = memo(function MessageCard({ message, priority = false
         )}
 
         {spec.content && (
-          <div>
-            <button className="text-xs font-medium text-foreground hover:underline" onClick={() => setShowContent(v => !v)}>
-              {showContent ? '收起全文' : '展开全文'}
-            </button>
-            {showContent && (
-              <>
-                <div
-                  className="prose prose-sm max-w-none mt-2 text-sm [&_img]:max-w-full [&_img]:rounded-md"
-                  dangerouslySetInnerHTML={{ __html: spec.content }}
-                />
-                <button
-                  className="mt-2 text-xs font-medium text-foreground hover:underline"
-                  onClick={() => setShowContent(false)}
-                >
-                  ↑ 收起全文
-                </button>
-              </>
-            )}
-          </div>
+          <button
+            className="text-xs font-medium text-foreground hover:underline"
+            onClick={() => setShowContent(true)}
+          >
+            展开全文
+          </button>
+        )}
+        {spec.content && (
+          <FullTextDialog
+            open={showContent}
+            title={`${spec.author?.name ?? spec.author?.handle ?? '全文'}${
+              metadata.creationTimestamp ? ` · ${new Date(metadata.creationTimestamp).toLocaleString('zh-CN', { hour12: false })}` : ''
+            }`}
+            html={spec.content}
+            onClose={() => setShowContent(false)}
+          />
         )}
       </CardContent>
 
