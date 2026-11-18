@@ -76,8 +76,8 @@ data/（gitignore）
 
 1. **资源信封**：API 对象都是 `{apiVersion: 'radar/v1', kind, metadata, spec, status}`。
    `radar/v1` 与 `radar/*` annotation 前缀是**内部标识符**，已落在历史档案里，改名需迁移，别轻动。
-2. **`spec.raw` 保真**：normalized 字段全部由 raw 派生。改 normalize 逻辑后重启即对全部历史数据生效（索引重建），不需要重抓。
-3. **档案不可变 / 用户态走 overlay**：RefreshWindow 与 item 资源只追加；已读、分类 label 等只写 `OverlayEntry`，PATCH 即时生效。overlay 通过 `overlay-for` 强引用目标，文件系统只保存媒体 blob。
+2. **`spec.raw` 只留在 message 上**：normalized 字段由 raw 派生，但 **window 不再逐条存 raw**（读路径直查 SQLite 之后没有代码需要重放），所以改 normalizer 只影响新抓到的数据；`scripts/rebuild-index.ts` 已删除。
+3. **已读状态在 `spec.read`，不再走 overlay**：overlay 是「独立资源 + link」，`ORDER BY read, ts` 用不上索引（实测 796ms/页）。现在 read 落 spec，配合 kind 声明的复合索引是 2ms；标记已读 = 重写 spec（单条 8.7KB，批量一个事务）。overlay 只剩 author 的分类 label 这类低频字段。
 4. **统一抓取档案**：手动/调度/登录后补抓走 `POST /refreshwindows`；连续浏览走 `POST /feedsessions` 与 `/feedsessions/{name}/pages`。两条入口最终都产生不可变 `RefreshWindow`，GET 永远只读本地状态。
    聚合 session 必须显式提交有序 `sources` 数组；B 站热门与个性化推荐是不同 source，不做别名。
 5. **多源归属**：同一条内容被多个源推到时，归属是集合（`radar/sources` annotation），`source=` selector 按集合匹配。消息名带平台前缀全局唯一（`twitter-<id>` / `zhihu-<id>` / `bilibili-<bvid>`）。

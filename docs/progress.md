@@ -92,6 +92,8 @@ verify.sh 全绿（A1-A4, A6, A9）且 A5/A7/A8 均为 [A] awaiting-user → loo
 
 （每轮迭代在此追加一行：日期 / 完成项 / 备注）
 
+- 2026-11-18 / 已读进 spec + 声明式索引 + 不再存 window raw / 配合 litectl 新增的「机制按需声明、声明式索引、批量删除」三件事重做读模型。已读从 overlay（独立资源+link，`ORDER BY read,ts` 用不了索引，实测 796ms）挪进 `message.spec.read`，按 kind 声明复合索引 `(api_version, kind, read, ts DESC)` —— 实测 2ms。踩到的关键坑：**SQLite 的表达式索引要求查询里的表达式与索引定义逐字一致**，`COALESCE(...)`/`(expr=1)` 都会让索引失效，JSON path 的引号形式（`$."read"` vs `$.read`）也算不一致。message 不再有 status（hydrated 一起进 spec），window 不再逐条存 raw（删 127,800 行，`rebuild-index.ts` 一并删除）。迁移脚本 `scripts/migrate-read-state.ts` 在 4.1GB 生产库上跑 41 秒（18 万行走 delete_many 单事务），迁移前备份 `data/backups/refresh-20261118-2217-pre-read-migration.db`。线上：unread-first 377→109ms、unread=true 924→104ms、unread-counts 842→152ms。verify 142 断言全绿。
+
 - 2026-11-18 / 读路径直查 SQLite + 保留策略 / 起因：一次重启让站点歇业 8 分 48 秒、常驻 5.2GB —— SQLite 只当了磁盘，`buildIndex()` 仍把 73,555 条 message 的完整 spec（含 raw）重放进内存 Map。现在 `server/queries.ts` 把 labelSelector / source 集合归属 / 未读 / 排序 / limit 全部拼成 SQL，`resources.ts` 只取当前页的行再合并 overlay（按 name 批量，不再整表读 overlay）；`buildIndex` 删除，启动不再重放 window。实测真实库（73k message / 3.5k window）启动 **4 秒**（原 8 分 48 秒），RSS **219MB**（原 5.2GB 常驻 / 7.8GB 峰值），`/messages?limit=50` 165ms、`/unread-counts` 188ms。代价是 normalize 只在写入时执行，改 normalizer 要显式跑 `scripts/rebuild-index.ts`。
 
   同时新增 `server/retention.ts` + `scripts/retention.ts`：按抓取时间删超龄 window（连带 items/page）、孤儿 message/author/overlay/media，最后 compact 掉 cutoff 之前的事件。两个判据踩过的坑：**followee-window 不能删**（关注列表是从它重放的，删了重启后空掉）；**message 不能按 updated_at 判**（window-item 还在就会重放把删掉的 message 复活），要用 `radar/lastSeenWindow`。7 天 dry-run：1,290 window / 58,884 items / 25,365 message / 45,003 media 文件（13.4GB）。verify 140 断言全绿。
