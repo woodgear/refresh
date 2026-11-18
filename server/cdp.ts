@@ -209,6 +209,10 @@ export async function ensureBrowser(log: (s: string) => void = () => {}): Promis
     '--no-first-run',
     '--no-default-browser-check',
     '--disable-sync',
+    // 抓取浏览器不需要任何扩展。KDE Plasma Integration 扩展（cimiefiia…）会在
+    // 浏览器启动时拉起 plasma-browser-integration-host，而 headless 抓取环境里
+    // 没有可用的 Qt 平台（DISPLAY 对不上 Xwayland），host 每次 abort 产生 coredump。
+    '--disable-extensions',
     '--disable-session-crashed-bubble',
     '--hide-crash-restore-bubble',
     '--disable-features=Translate',
