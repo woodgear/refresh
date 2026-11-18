@@ -5,6 +5,7 @@ import {
   accountResources,
   getAuthor,
   getMessage,
+  setMessagesRead,
   getWindowResource,
   listAuthors,
   listMessages,
@@ -40,7 +41,7 @@ import {
   publicFeedSourcePage,
 } from './aggregate-feed-sessions'
 import { feedUpdateMessageRefs } from './feed-updates'
-import { patchOverlay, patchOverlayMany, type OverlayEntry } from './store'
+import { patchOverlay, type OverlayEntry } from './store'
 import { mediaFilePath, mediaVariantName, mediaVariantPath, MIME_BY_EXT, isAllowedMediaHost, proxyMediaFetch } from './media'
 import { readFile } from 'fs/promises'
 import { observabilitySummary } from './observability'
@@ -101,12 +102,8 @@ apiV1.post('/messages/mark-read', async c => {
   } else {
     return c.json({ error: 'names or labelSelector required' }, 400)
   }
-  const readAt = new Date().toISOString()
-  await patchOverlayMany(
-    'messages',
-    Object.fromEntries(targets.map(n => [n, { status: { read: true, readAt } }])),
-  )
-  return c.json({ marked: targets.length })
+  const marked = await setMessagesRead(targets, true)
+  return c.json({ marked })
 })
 
 apiV1.get('/unread-counts', async c => {
@@ -121,8 +118,10 @@ apiV1.get('/messages/:name', async c => {
 apiV1.patch('/messages/:name', async c => {
   const name = c.req.param('name')
   if (!(await getMessage(name))) return c.json({ error: 'not found' }, 404)
-  const patch = (await c.req.json()) as OverlayEntry
-  await patchOverlay('messages', name, patch)
+  const patch = (await c.req.json()) as { status?: { read?: boolean | null } }
+  const read = patch.status?.read
+  if (typeof read !== 'boolean') return c.json({ error: 'only status.read is patchable' }, 400)
+  await setMessagesRead([name], read)
   return c.json(await getMessage(name))
 })
 

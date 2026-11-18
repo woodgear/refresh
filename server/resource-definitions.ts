@@ -23,13 +23,25 @@ const REFERENCE_SCHEMA = {
 function defineResource<K extends string>(
   kind: K,
   storageKind: string,
-  options: { statusStorageKind?: string; schema?: Record<string, unknown> } = {},
+  options: {
+    statusStorageKind?: string
+    schema?: Record<string, unknown>
+    /** litectl 机制声明；refresh 不需要事件流，显式写成 none */
+    mechanisms?: { events?: 'none' | 'aggregate' | 'full' }
+    /** 声明式索引：业务列，litectl 会强制加 (api_version, kind) 前缀建全局索引 */
+    indexes?: { name: string; columns: string[] }[]
+  } = {},
 ): ResourceDefinition<K> {
+  const schema: Record<string, unknown> = { ...(options.schema ?? OBJECT_SCHEMA) }
+  schema['x-litectl-mechanisms'] = options.mechanisms ?? { events: 'none' }
+  if (options.indexes && options.indexes.length > 0) {
+    schema['x-litectl-indexes'] = options.indexes
+  }
   return {
     apiVersion: 'radar/v1',
     kind,
     storageKind,
-    schema: options.schema ?? OBJECT_SCHEMA,
+    schema,
     statusStorageKind: options.statusStorageKind,
   }
 }
@@ -129,7 +141,20 @@ const feedSessionSchema = {
   additionalProperties: false,
 } as const
 
-export const MessageResource = defineResource('Message', 'message', { statusStorageKind: 'message-status' })
+// 不再有 status：hydrated/read 都是 message 自己的字段，落在 spec 上（可索引）
+export const MessageResource = defineResource('Message', 'message', {
+  indexes: [
+    // 前端主查询：未读优先 + 按内容时间倒序
+    {
+      name: 'feed',
+      columns: ['spec.read', 'annotations.refresh.internal/creationTimestamp DESC'],
+    },
+    // 默认排序：按内容时间倒序
+    { name: 'by_time', columns: ['annotations.refresh.internal/creationTimestamp DESC'] },
+    // 按源过滤（source 是多值 annotation，用不上 labels 索引）
+    { name: 'by_source', columns: ['annotations.radar/sources'] },
+  ],
+})
 export const AuthorResource = defineResource('Author', 'author', { statusStorageKind: 'author-status' })
 export const FolloweeResource = defineResource('Followee', 'followee', { statusStorageKind: 'followee-status' })
 export const RefreshWindowResource = defineResource('RefreshWindow', 'refresh-window', {

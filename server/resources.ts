@@ -12,6 +12,7 @@ import { normalizeItem, expandRawItems } from './normalize'
 import { localMediaUrl, mediaPresentationForUrl } from './media'
 import {
   putStoredResource,
+  putStoredResources,
   type OverlayEntry,
   type OverlayKind,
   type Resource,
@@ -149,8 +150,13 @@ export async function ingestWindow(win: WindowFile, opts: { persist?: boolean } 
           },
           creationTimestamp: message.creationTimestamp ?? fetchedAt ?? undefined,
         },
-        spec: message.spec as unknown as Record<string, unknown>,
-        status: { hydrated: message.spec.content != null },
+        spec: {
+          ...(message.spec as unknown as Record<string, unknown>),
+          // 已读/派生状态直接落在 spec 上：既能查也能和排序键进同一条索引
+          read: false,
+          hydrated: message.spec.content != null,
+        },
+        status: {},
       } as Resource)
     }
 
@@ -301,6 +307,25 @@ export async function unreadCounts(): Promise<{ total: number; sources: Record<s
   return { total, sources }
 }
 
+/** 标记已读/未读：改 spec.read 并重写整条消息（单条 8.7KB，批量标记 40 条约 350KB）。 */
+export async function setMessagesRead(names: string[], read: boolean): Promise<number> {
+  const db = database()
+  const readAt = new Date().toISOString()
+  const changed: Resource[] = []
+  for (const name of names) {
+    const resource = getRefreshResource(db, MessageResource, name) as Resource | null
+    if (!resource) continue
+    const spec = { ...(resource.spec as Record<string, unknown>) }
+    if (!!spec.read === read) continue
+    spec.read = read
+    spec.readAt = read ? readAt : null
+    resource.spec = spec
+    changed.push(resource)
+  }
+  if (changed.length > 0) await putStoredResources(changed)
+  return changed.length
+}
+
 export async function getMessage(name: string) {
   const resource = getRefreshResource(database(), MessageResource, name)
   if (!resource) return null
@@ -401,64 +426,6 @@ export function accountResources(): Resource[] {
     spec: { platform: account.platform, displayName: account.displayName, profileDir: account.profileDir ?? null },
     status: statuses.get(account.name) ?? { auth: 'unknown', lastChecked: null },
   }))
-}
-
-// ---------- 维护：用当前 normalizer 重算历史 message ----------
-
-export interface RebuildReport {
-  dryRun: boolean
-  windows: number
-  updated: number
-  missing: number
-  durationMs: number
-}
-
-/**
- * 只更新已存在的 message（不新建、不删除），保留 created_at / lastSeenWindow / overlay。
- * 用于「改了 normalizer，想让老数据跟上」——读路径直查之后重启不再自动重放。
- */
-export async function rebuildMessages(opts: { dryRun?: boolean } = {}): Promise<RebuildReport> {
-  const dryRun = opts.dryRun ?? true
-  const startedAt = Date.now()
-  const db = database()
-  const { listWindowNames, readWindowFile } = await import('./store')
-  let updated = 0
-  let missing = 0
-  const names = await listWindowNames()
-
-  for (const windowName of names) {
-    let win
-    try {
-      win = await readWindowFile(windowName)
-    } catch {
-      continue
-    }
-    const source = getSource(String((win.spec as Record<string, unknown>).source))
-    const platform = source?.platform ?? String(windowName.split('-')[0])
-    const batch: Resource[] = []
-    for (const raw of expandRawItems(platform, win.rawItems ?? [])) {
-      const normalized = normalizeItem(platform, raw)
-      if (!normalized) continue
-      const existing = getRefreshResource(db, MessageResource, normalized.message.name) as Resource | null
-      if (!existing) {
-        missing++
-        continue
-      }
-      for (const m of normalized.message.spec.media) {
-        m.url = m.url ?? localMediaUrl(m.originUrl)
-        attachMediaPresentation(m)
-      }
-      localizeAvatar(normalized.message.spec.author)
-      existing.spec = normalized.message.spec as unknown as Record<string, unknown>
-      batch.push(existing)
-      updated++
-    }
-    if (!dryRun) {
-      for (const resource of batch) await putStoredResource(resource)
-    }
-  }
-
-  return { dryRun, windows: names.length, updated, missing, durationMs: Date.now() - startedAt }
 }
 
 function stripUndefined<T extends Record<string, unknown>>(obj: T): T {

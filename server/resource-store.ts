@@ -200,30 +200,17 @@ export async function putWindowFile(win: WindowFile): Promise<void> {
     if (getRefreshResource(database(), RefreshWindowResource, win.metadata.name)) {
       throw new Error(`window already exists (archives are immutable): ${win.metadata.name}`)
     }
-    const { rawItems, ...resource } = win
+    // 只存 window 本身，不再逐条存 raw：读路径直查之后没有任何代码需要重放 raw，
+    // 多存 12 万行（含完整 raw）只是存储负担。normalize 结果已经在写入时固化进 message。
+    const { rawItems: _rawItems, ...resource } = win
     putResourceSync(resource as Resource)
-    const platform = String(resource.metadata.labels?.platform ?? '')
-    const source = String((resource.spec as Record<string, unknown>).source ?? '')
-    rawItems.forEach((raw, ordinal) => {
-      putResourceSync({
-        apiVersion: API_VERSION,
-        kind: RefreshWindowItemResource.kind,
-        metadata: {
-          name: `${win.metadata.name}-${String(ordinal).padStart(6, '0')}`,
-          labels: { window: win.metadata.name, platform, source },
-          creationTimestamp: win.metadata.creationTimestamp,
-        },
-        spec: { window: win.metadata.name, ordinal, raw },
-        status: {},
-      })
-    })
   })
 }
 
 export async function readWindowFileFromStore(name: string): Promise<WindowFile> {
   const resource = getRefreshResource(database(), RefreshWindowResource, name)
   if (!resource) throw new Error(`window not found: ${name}`)
-  return { ...(resource as WindowFile), kind: RefreshWindowResource.kind, rawItems: readWindowItems(RefreshWindowItemResource, RefreshWindowResource, name) }
+  return { ...(resource as WindowFile), kind: RefreshWindowResource.kind, rawItems: [] }
 }
 
 export async function updateWindowStatusInStore(name: string, status: unknown): Promise<WindowFile> {
@@ -384,6 +371,14 @@ function patchOverlaySync(kind: OverlayKind, name: string, patch: OverlayEntry):
     status: {},
   })
   return entry
+}
+
+/** 批量写：一个事务写完，避免 N 次 fsync（标记已读这类批量操作用）。 */
+export async function putResourcesInStore(resources: Resource[]): Promise<void> {
+  if (resources.length === 0) return
+  writeTransaction(() => {
+    for (const resource of resources) putResourceSync(resource)
+  })
 }
 
 function putResourceSync(resource: Resource): void {

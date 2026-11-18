@@ -78,7 +78,8 @@ assert_eq "Succeeded" "$PHASE" "window 走到 Succeeded"
 assert_eq "3" "$(curl -s "$BASE/refreshwindows/$WIN_NAME" | jq -r .status.stats.new)" "stats.new 正确（广告丢弃、聚合卡拆开）"
 WIN_ROWS=$(sqlite3 "$TMPDIR/refresh.db" "select count(*) from resources where kind='refresh-window' and name='$WIN_NAME';" 2>/dev/null)
 WIN_ITEM_ROWS=$(sqlite3 "$TMPDIR/refresh.db" "select count(*) from resources where kind='refresh-window-item' and json_extract(spec_json,'$.windowRef.name')='$WIN_NAME';" 2>/dev/null)
-if [ "$WIN_ROWS" = "1" ] && [ "$WIN_ITEM_ROWS" -ge 1 ] 2>/dev/null; then ok "档案落盘到 SQLite ResourceStore"; else fail "SQLite 档案缺失 (window=$WIN_ROWS items=$WIN_ITEM_ROWS)"; fi
+if [ "$WIN_ROWS" = "1" ]; then ok "档案落盘到 SQLite ResourceStore"; else fail "SQLite 档案缺失 (window=$WIN_ROWS)"; fi
+assert_eq "0" "$WIN_ITEM_ROWS" "不再逐条存 window raw（读路径直查后不需要重放）"
 # 同 source 再抓一轮 → 全部 duplicate
 WIN2_NAME=$(curl -s -X POST "$BASE/refreshwindows" -d '{"spec":{"source":"zhihu-main-recommend"}}' | jq -r .metadata.name)
 sleep 1
@@ -138,8 +139,10 @@ curl -s -X PATCH "$BASE/authors/zhihu-mock-author" -d '{"labels":{"category":"te
 assert_eq "test-cat" "$(curl -s "$BASE/authors/zhihu-mock-author" | jq -r .metadata.labels.category)" "PATCH author label（overlay）"
 assert_eq "3" "$(curl -s "$BASE/messages?authorSelector=category=test-cat" | jq '.items | length')" "authorSelector 筛消息"
 assert_eq "0" "$(curl -s "$BASE/messages?authorSelector=category=other" | jq '.items | length')" "authorSelector 不命中为空"
-curl -s -X PATCH "$BASE/messages/zhihu-8001" -d '{"labels":{"starred":"true"}}' >/dev/null
-assert_eq "true" "$(curl -s "$BASE/messages/zhihu-8001" | jq -r .metadata.labels.starred)" "PATCH message label（overlay）"
+curl -s -X PATCH "$BASE/messages/zhihu-8001" -d '{"status":{"read":true}}' >/dev/null
+assert_eq "true" "$(curl -s "$BASE/messages/zhihu-8001" | jq -r .spec.read)" "PATCH message read（写进 spec，可进索引）"
+curl -s -X PATCH "$BASE/messages/zhihu-8001" -d '{"status":{"read":false}}' >/dev/null
+assert_eq "false" "$(curl -s "$BASE/messages/zhihu-8001" | jq -r .spec.read)" "PATCH 标回未读"
 
 log "== Followee: 独立关注列表、分组、备注、导出 =="
 FW=$(curl -s -X POST "$BASE/followeewindows" -d '{"spec":{}}')
@@ -168,13 +171,13 @@ log "== 已读/未读追踪与排序 =="
 assert_eq "5" "$(curl -s "$BASE/unread-counts" | jq -r .total)" "初始全未读"
 curl -s -X POST "$BASE/messages/mark-read" -d '{"names":["zhihu-8003"]}' >/dev/null
 assert_eq "4" "$(curl -s "$BASE/unread-counts" | jq -r .total)" "批量 mark-read 生效"
-assert_eq "true" "$(curl -s "$BASE/messages/zhihu-8003" | jq -r .status.read)" "read 状态可见"
+assert_eq "true" "$(curl -s "$BASE/messages/zhihu-8003" | jq -r .spec.read)" "read 状态可见（spec.read）"
 assert_eq "4" "$(curl -s "$BASE/messages?unread=true" | jq '.items | length')" "unread=true 过滤"
 # unread-first：已读的 zhihu-8003（时间最新）应沉底
 assert_eq "zhihu-8003" "$(curl -s "$BASE/messages?labelSelector=platform=zhihu&sort=unread-first" | jq -r '.items[-1].metadata.name')" "未读优先排序：已读沉底"
 assert_eq "zhihu-8003" "$(curl -s "$BASE/messages?labelSelector=platform=zhihu&sort=time" | jq -r '.items[0].metadata.name')" "时间排序不受 read 影响"
 # 取消已读（PATCH null 删 key）
-curl -s -X PATCH "$BASE/messages/zhihu-8003" -d '{"status":{"read":null,"readAt":null}}' >/dev/null
+curl -s -X PATCH "$BASE/messages/zhihu-8003" -d '{"status":{"read":false}}' >/dev/null
 assert_eq "5" "$(curl -s "$BASE/unread-counts" | jq -r .total)" "标回未读"
 # labelSelector 圈范围全已读
 curl -s -X POST "$BASE/messages/mark-read" -d '{"labelSelector":"platform=zhihu"}' >/dev/null

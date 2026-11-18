@@ -19,6 +19,7 @@ import {
   readMediaManifestFromStore as resourceReadMediaManifest,
   putMediaObject as resourcePutMediaObject,
   putResource as resourcePutResource,
+  putResourcesInStore as resourcePutResources,
   getResource as resourceGetResource,
   listResources as resourceListResources,
   listFeedPagesInStore as resourceListFeedPages,
@@ -198,6 +199,12 @@ export async function putMediaObject(originUrl: string, entry: { file: string; b
 export async function putStoredResource(resource: Resource): Promise<void> {
   await ensureDirs()
   await resourcePutResource(resource)
+}
+
+/** 批量写（单事务） */
+export async function putStoredResources(resources: Resource[]): Promise<void> {
+  await ensureDirs()
+  await resourcePutResources(resources)
 }
 
 export async function commitFeedPage(session: Resource, page: Resource): Promise<void> {
