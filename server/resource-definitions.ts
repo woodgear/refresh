@@ -31,7 +31,7 @@ function defineResource<K extends string>(
     /** litectl 机制声明；refresh 不需要事件流，显式写成 none */
     mechanisms?: { events?: 'none' | 'aggregate' | 'full' }
     /** 声明式索引：业务列，litectl 会强制加 (api_version, kind) 前缀建全局索引 */
-    indexes?: { name: string; columns: string[] }[]
+    indexes?: { name: string; columns: string[]; sampleQuery?: string }[]
     /**
      * 读路径从 spec 里摘掉的键（只是不出网，库里照旧保存）。
      * message 的 raw 是平台原始 item（平均 5.9KB），前端一个字段都不用，
@@ -154,13 +154,20 @@ const feedSessionSchema = {
 export const MessageResource = defineResource('Message', 'message', {
   apiOmitSpecKeys: ['raw'],
   indexes: [
-    // 前端主查询：未读优先 + 按内容时间倒序
+    // 前端主查询：未读优先 + 按内容时间倒序。
+    // sampleQuery 给 `litectl admin stats` 做 EXPLAIN 抽查用 —— 表达式索引的写法
+    // 差一个引号就会静默退化成全表排序，只有真跑一遍计划才看得出来。
     {
       name: 'feed',
       columns: ['spec.read', 'annotations.refresh.internal/creationTimestamp DESC'],
+      sampleQuery: `SELECT name FROM resources WHERE api_version = 'radar/v1' AND kind = 'message' ORDER BY json_extract(spec_json, '$."read"') ASC, json_extract(annotations, '$."refresh.internal/creationTimestamp"') DESC LIMIT 50`,
     },
     // 默认排序：按内容时间倒序
-    { name: 'by_time', columns: ['annotations.refresh.internal/creationTimestamp DESC'] },
+    {
+      name: 'by_time',
+      columns: ['annotations.refresh.internal/creationTimestamp DESC'],
+      sampleQuery: `SELECT name FROM resources WHERE api_version = 'radar/v1' AND kind = 'message' ORDER BY json_extract(annotations, '$."refresh.internal/creationTimestamp"') DESC LIMIT 50`,
+    },
     // 按源过滤（source 是多值 annotation，用不上 labels 索引）
     { name: 'by_source', columns: ['annotations.radar/sources'] },
   ],
