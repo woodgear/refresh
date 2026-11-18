@@ -18,7 +18,7 @@ interface UIStore {
   setSelectedWindow: (name: string | null) => void
   setAutoRead: (v: boolean) => void
   setLayout: (source: string, mode: 'list' | 'grid') => void
-  setFeedSession: (feedKey: string, name: string) => void
+  setFeedSession: (feedKey: string, name: string | null) => void
   setFeedPosition: (feedKey: string, position: { messageName: string; offset: number } | null) => void
 }
 
@@ -41,7 +41,13 @@ export const useUIStore = create<UIStore>()(
       setSelectedWindow: name => set({ selectedWindow: name }),
       setAutoRead: autoRead => set({ autoRead }),
       setLayout: (source, mode) => set(s => ({ layouts: { ...s.layouts, [source]: mode } })),
-      setFeedSession: (feedKey, name) => set(s => ({ feedSessions: { ...s.feedSessions, [feedKey]: name } })),
+      setFeedSession: (feedKey, name) => set(s => {
+        if (name === null) {
+          const { [feedKey]: _dropped, ...rest } = s.feedSessions
+          return { feedSessions: rest }
+        }
+        return { feedSessions: { ...s.feedSessions, [feedKey]: name } }
+      }),
       setFeedPosition: (feedKey, position) => set(s => {
         const feedPositions = { ...s.feedPositions }
         if (position === null) delete feedPositions[feedKey]

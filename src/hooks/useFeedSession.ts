@@ -115,13 +115,29 @@ export function useFeedSession(feedKey: string) {
     try {
       const savedName = useUIStore.getState().feedSessions[feedKey]
       const savedPosition = useUIStore.getState().feedPositions[feedKey]
-      const transition = savedName ? null : await createSessionOnce(feedKey)
-      const session = transition?.session ?? await getFeedSession(savedName)
+      // 存的 session 可能已经不存在了（服务端 retention 清掉页、或者库重建过）。
+      // 这时候不能把首页卡死在 404，重建一个新的就行。
+      let transition = savedName ? null : await createSessionOnce(feedKey)
+      let created = !savedName
+      let session
+      if (savedName) {
+        try {
+          session = await getFeedSession(savedName)
+        } catch (error) {
+          if (!/404/.test(error instanceof Error ? error.message : String(error))) throw error
+          useUIStore.getState().setFeedSession(feedKey, null)
+          transition = await createSessionOnce(feedKey)
+          created = true
+          session = transition.session
+        }
+      } else {
+        session = transition!.session
+      }
       assertSessionMatchesFeedKey(session, feedKey)
       const offset = savedPosition?.offset ?? 0
       const page = await getFeedMessages(session.metadata.name, offset)
       if (version !== requestVersion.current) return
-      if (!savedName) useUIStore.getState().setFeedSession(feedKey, session.metadata.name)
+      if (created) useUIStore.getState().setFeedSession(feedKey, session.metadata.name)
       commit(() => stateFromPage(session, page, offset, savedPosition?.messageName))
     } catch (error) {
       if (version !== requestVersion.current) return
