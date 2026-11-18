@@ -5,23 +5,21 @@
 //   - refresh-window：created_at 超龄 → 连同 items 一起删
 //   - feed-page / aggregate-feed-page / feed-source-page：created_at 超龄 → 删
 //   - message：annotation radar/lastSeenWindow 指向的 window 已不在保留期。
-//     不用 updated_at：只要 window-item 还在，启动重放 raw 就会把它重建出来。
+//     不用 updated_at：那反映的是「用户点了已读」，相对抓取时间是噪声。
 //   - author：没有任何保留中的 message 引用
 //   - overlay-entry：它 overlay-for 的目标已经不在保留集合里
 //   - media-object：文件不被任何保留中的 message spec 引用
 //
 // 故意不动 followee-window / followee-window-item：关注列表的 Followee 资源是从这些
-// 窗口重放出来的（buildFolloweeIndex），删了窗口重启后关注列表会空掉。它们只有 13 个窗口、
-// 37MB，留着。
+// 窗口重放出来的（buildFolloweeIndex），删了窗口重启后关注列表会空掉。
 //
-// 删除走 litectl_delete（status 级联、labels/links 随外键删除），每删一条产一条事件，
-// 所以最后把 cutoff 之前的事件 compact 掉。
+// 删除走 litectl_delete_many（整批一个事务，18 万行 40 秒）；refresh 的 kind 声明了
+// events: none，所以删除不再产生事件，末尾的 compact 只是为了清掉历史遗留。
 
 import { rm } from 'fs/promises'
 import { join } from 'path'
 import type { Database } from 'bun:sqlite'
 import { MEDIA_DIR, MEDIA_VARIANTS_DIR } from './store'
-import { deleteRefreshResource } from './litectl-resource-facade'
 import { resourceDatabase } from './resource-store'
 import {
   AggregateFeedPageResource,
@@ -278,11 +276,22 @@ function formatReport(report: RetentionReport): string {
   ].filter(Boolean).join(' ')
 }
 
-/** 逐条删除（litectl_delete 自己开事务，不在这里再包一层）。 */
+/**
+ * 批量删除：整批一个事务（litectl_delete_many）。
+ * 逐条 litectl_delete 是 3.2ms/行（每条一次 fsync），18 万行要 12 分钟；
+ * 批量 1000 行 5ms，同样的量 40 秒。
+ */
 function deleteBatch(db: Database, definition: ResourceDefinition, names: string[]): number {
+  if (names.length === 0) return 0
+  const statement = db.query<{ result: string }, [string, string, string]>(
+    'SELECT litectl_delete_many(?, ?, ?, 1) AS result',
+  )
   let deleted = 0
-  for (const name of names) {
-    if (deleteRefreshResource(db, definition, name)) deleted++
+  for (let start = 0; start < names.length; start += 5000) {
+    const chunk = names.slice(start, start + 5000)
+    const row = statement.get(API_VERSION, definition.storageKind, JSON.stringify(chunk))
+    if (!row) continue
+    deleted += (JSON.parse(row.result) as { deleted: number }).deleted
   }
   return deleted
 }

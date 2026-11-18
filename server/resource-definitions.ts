@@ -4,6 +4,8 @@ export interface ResourceDefinition<K extends string = string> {
   storageKind: string
   schema: Record<string, unknown>
   statusStorageKind?: string
+  /** 读路径从 spec 里摘掉的键（只是不出网，库里照旧保存） */
+  apiOmitSpecKeys?: string[]
 }
 
 const OBJECT_SCHEMA = { type: 'object' } as const
@@ -30,6 +32,12 @@ function defineResource<K extends string>(
     mechanisms?: { events?: 'none' | 'aggregate' | 'full' }
     /** 声明式索引：业务列，litectl 会强制加 (api_version, kind) 前缀建全局索引 */
     indexes?: { name: string; columns: string[] }[]
+    /**
+     * 读路径从 spec 里摘掉的键（只是不出网，库里照旧保存）。
+     * message 的 raw 是平台原始 item（平均 5.9KB），前端一个字段都不用，
+     * 带上它让 50 条响应胖 6 倍。
+     */
+    apiOmitSpecKeys?: string[]
   } = {},
 ): ResourceDefinition<K> {
   const schema: Record<string, unknown> = { ...(options.schema ?? OBJECT_SCHEMA) }
@@ -43,6 +51,7 @@ function defineResource<K extends string>(
     storageKind,
     schema,
     statusStorageKind: options.statusStorageKind,
+    apiOmitSpecKeys: options.apiOmitSpecKeys,
   }
 }
 
@@ -143,6 +152,7 @@ const feedSessionSchema = {
 
 // 不再有 status：hydrated/read 都是 message 自己的字段，落在 spec 上（可索引）
 export const MessageResource = defineResource('Message', 'message', {
+  apiOmitSpecKeys: ['raw'],
   indexes: [
     // 前端主查询：未读优先 + 按内容时间倒序
     {

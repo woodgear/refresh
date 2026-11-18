@@ -305,13 +305,20 @@ function readRows(
             AND selected_target.kind = ?
             AND selected_target.name = ?
        )`
+  // spec 投影：声明的键在 SQL 里就摘掉，不进 JSON.parse，也不出网
+  const omitKeys = definition.apiOmitSpecKeys ?? []
+  const specProjection = omitKeys.length === 0
+    ? 'subject.spec_json'
+    : omitKeys
+        .map(key => `'$.${key.replace(/'/g, "''")}'`)
+        .reduce((expr, path) => `json_remove(${expr}, ${path})`, 'subject.spec_json')
   return database
     .query<ResourceRow, string[]>(
       `SELECT subject.api_version,
               subject.kind,
               subject.name,
               subject.annotations,
-              subject.spec_json,
+              ${specProjection} AS spec_json,
               COALESCE((SELECT json_group_object(key, value) FROM labels WHERE resource_id = subject.id), '{}') AS labels_json,
               (SELECT status.spec_json
                  FROM resource_links link

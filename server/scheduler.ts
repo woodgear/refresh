@@ -7,6 +7,7 @@
 // 采集走的是真实登录态浏览器，固定的 24/7 等距节奏是这套东西最像机器人的信号；
 // 抖动只影响"什么时候抓"，不影响"抓什么"，也不改 intervalMs 本身的语义。
 
+import { runRetention } from './retention'
 import { ACCOUNTS, SOURCES } from './config'
 import { checkAuth } from './auth'
 import { createRefreshWindow, getRunningWindow } from './refresh'
@@ -111,7 +112,9 @@ export function schedulerResource(): Resource {
   }
 }
 
-export async function patchScheduler(patch: { enabled?: unknown; intervalMs?: unknown }): Promise<Resource> {
+export async function patchScheduler(
+  patch: { enabled?: unknown; intervalMs?: unknown; retentionIntervalMs?: unknown; lastRetentionAt?: unknown },
+): Promise<Resource> {
   if (typeof patch.enabled === 'boolean') spec.enabled = patch.enabled
   if (typeof patch.intervalMs === 'number') {
     if (patch.intervalMs < MIN_INTERVAL_MS) throw new Error(`intervalMs must be >= ${MIN_INTERVAL_MS}`)
@@ -158,8 +161,38 @@ async function runRound(): Promise<void> {
         }
       }
     }
+    await maybeRunRetention()
   } finally {
     roundInProgress = false
+  }
+}
+
+/// 保留策略默认每天跑一次（跟抓取轮解耦：抓取 30 分钟一轮，retention 24 小时一次）。
+const DEFAULT_RETENTION_INTERVAL_MS = 24 * 60 * 60 * 1000
+/// 首次运行不立刻删数据：把「从没跑过」当成「刚跑过」，部署后满一个周期才动手。
+const schedulerStartedAt = Date.now()
+
+async function maybeRunRetention(): Promise<void> {
+  const spec = schedulerResource().spec as Record<string, unknown>
+  const intervalMs =
+    typeof spec.retentionIntervalMs === 'number' && spec.retentionIntervalMs > 0
+      ? spec.retentionIntervalMs
+      : DEFAULT_RETENTION_INTERVAL_MS
+  const lastAt =
+    typeof spec.lastRetentionAt === 'string' ? Date.parse(spec.lastRetentionAt) : schedulerStartedAt
+  if (Number.isFinite(lastAt) && Date.now() - lastAt < intervalMs) return
+  try {
+    rlog('retention', 'start')
+    const report = await runRetention({ dryRun: false })
+    await patchScheduler({ lastRetentionAt: new Date().toISOString() })
+    rlog(
+      'retention',
+      `done: windows=${report.windows} messages=${report.messages} authors=${report.authors} ` +
+        `overlays=${report.overlays} media=${report.mediaObjects} events=${report.compactedEvents} ` +
+        `(${Math.round(report.durationMs / 1000)}s)`,
+    )
+  } catch (err) {
+    rlog('retention', `failed: ${err instanceof Error ? err.message : err}`)
   }
 }
 

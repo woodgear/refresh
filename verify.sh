@@ -94,8 +94,10 @@ assert_eq "3" "$(curl -s "$BASE/messages?labelSelector=platform=zhihu" | jq '.it
 assert_eq "1" "$(curl -s "$BASE/messages?labelSelector=platform=zhihu&limit=1" | jq '.items | length')" "limit 生效"
 assert_eq "zhihu-8003" "$(curl -s "$BASE/messages?labelSelector=platform=zhihu" | jq -r '.items[0].metadata.name')" "按时间倒序（聚合卡内条目正常入库）"
 assert_eq "mock excerpt one" "$(curl -s "$BASE/messages/zhihu-8001" | jq -r .spec.text)" "单条 GET + normalize"
-RAW_ID=$(curl -s "$BASE/messages/zhihu-8001" | jq -r .spec.raw.id)
-assert_eq "8001" "$RAW_ID" "spec.raw 保留原始 payload"
+# raw 只留在库里、不出网：API 响应摘掉它（50 条响应瘦 67%），但存储层照旧
+RAW_ROWS=$(sqlite3 "$TMPDIR/refresh.db" "select count(*) from resources where kind='message' and json_extract(spec_json,'\$.raw') is not null;" 2>/dev/null)
+assert_eq "true" "$([ "${RAW_ROWS:-0}" -ge 1 ] && echo true || echo false)" "spec.raw 保留在库里"
+assert_eq "false" "$(curl -s "$BASE/messages/zhihu-8001" | jq 'has("spec") and (.spec | has("raw"))')" "API 响应不返回 spec.raw"
 # 多源归属：同一内容被第二个源推到后，两个源的视图里都应出现
 curl -s -X POST "$BASE/refreshwindows" -d '{"spec":{"source":"zhihu-main-follow"}}' >/dev/null
 sleep 1
