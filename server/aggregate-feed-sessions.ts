@@ -356,16 +356,20 @@ export function deriveAggregatePublishedMessageRefs(
   pages: AggregateFeedPageResource[],
 ): string[] {
   pages.sort((left, right) => left.spec.ordinal - right.spec.ordinal)
+  // 页是保留策略的清理对象（session 不是）：过期的 page 被 retention 删掉后，
+  // status.pageCount 还指着它们。这时不能 500 —— 按实际留存的页返回，
+  // 前端看到的是「历史页不可回了」，而不是整个 feed 打不开。
   if (pages.length !== session.status.pageCount) {
-    throw new Error(
-      `FeedSession/${session.metadata.name} page count mismatch: status=${session.status.pageCount}, stored=${pages.length}`,
+    rlog(
+      'feed',
+      `session=${session.metadata.name} pageCount=${session.status.pageCount} stored=${pages.length}（过期页已被清理）`,
     )
   }
   const refs: string[] = []
-  pages.forEach((page, ordinal) => {
-    if (page.spec.session !== session.metadata.name || page.spec.ordinal !== ordinal) {
+  pages.forEach(page => {
+    if (page.spec.session !== session.metadata.name) {
       throw new Error(
-        `FeedSession/${session.metadata.name} has invalid AggregateFeedPage ordinal ${page.spec.ordinal} at index ${ordinal}`,
+        `FeedSession/${session.metadata.name} has foreign AggregateFeedPage ${page.metadata.name}`,
       )
     }
     refs.push(...page.spec.messageRefs)

@@ -25,6 +25,7 @@ import {
   AggregateFeedPageResource,
   AuthorResource,
   FeedPageResource,
+  FeedSessionResource,
   FeedSourcePageResource,
   MediaObjectResource,
   MessageResource,
@@ -52,6 +53,7 @@ export interface RetentionReport {
   windows: number
   windowItems: number
   feedPages: number
+  orphanSessions: number
   messages: number
   authors: number
   overlays: number
@@ -214,6 +216,21 @@ export async function runRetention(options: RetentionOptions = {}): Promise<Rete
         : false))
     .map(row => row.name)
 
+  // session 是导航状态、不是档案：它的页被删掉之后，status.pageCount 就该跟着失效。
+  // 留着会让 /feedsessions/<name>/messages 报 page count mismatch（2026-11-17 那次
+  // retention 删了 63 个 page，13 个 aggregate session 就这么悬着）。
+  const orphanSessions = namesOf(
+    db,
+    `SELECT r.name FROM resources r
+       JOIN resource_links l ON l.to_id = r.id AND l.relation = 'status'
+       JOIN resources st ON st.id = l.from_id
+      WHERE r.kind = 'feed-session'
+        AND CAST(json_extract(st.spec_json, '$.value.pageCount') AS INTEGER) >
+            (SELECT count(*) FROM resources p
+              WHERE p.kind IN ('feed-page', 'aggregate-feed-page')
+                AND p.name LIKE r.name || '-%')`,
+  )
+
   const candidates = collectMedia(db)
   const visibleMediaFiles = new Set<string>()
   for (const row of keptMessages) {
@@ -229,6 +246,7 @@ export async function runRetention(options: RetentionOptions = {}): Promise<Rete
     windows: expiredWindows.length,
     windowItems: windowItems.length,
     feedPages: expiredPages,
+    orphanSessions: orphanSessions.length,
     messages: expiredMessages.length,
     authors: expiredAuthors.length,
     overlays: orphanOverlays.length,
@@ -250,6 +268,7 @@ export async function runRetention(options: RetentionOptions = {}): Promise<Rete
   deleteBatch(db, AggregateFeedPageResource, expiredPagesByKind.aggregate)
   deleteBatch(db, FeedSourcePageResource, expiredPagesByKind.source)
   deleteBatch(db, OverlayEntryResource, orphanOverlays)
+  deleteBatch(db, FeedSessionResource, orphanSessions)
   deleteBatch(db, MessageResource, expiredMessages)
   deleteBatch(db, AuthorResource, expiredAuthors)
   deleteBatch(db, RefreshWindowResource, expiredWindows)
@@ -267,6 +286,7 @@ function formatReport(report: RetentionReport): string {
     `${report.retentionDays}d cutoff=${report.cutoff}`,
     `windows=${report.windows}/${report.windowItems}items`,
     `pages=${report.feedPages}`,
+    report.orphanSessions ? `orphanSessions=${report.orphanSessions}` : '',
     `messages=${report.messages}`,
     `authors=${report.authors}`,
     `overlays=${report.overlays}`,
