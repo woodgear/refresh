@@ -121,7 +121,7 @@ interface MessageCardProps {
 export const MessageCard = memo(function MessageCard({ message, priority = false, onSeen, onToggleRead, layout = 'list' }: MessageCardProps) {
   const { spec, metadata } = message
   const platform = metadata.labels?.platform
-  const read = !!message.status.read
+  const read = !!spec.read
   const [showContent, setShowContent] = useState(false)
   const [preview, setPreview] = useState<PreviewTarget | null>(null)
   const author = spec.author

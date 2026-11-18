@@ -221,7 +221,7 @@ export function useFeedSession(feedKey: string) {
     commit(value => ({
       ...value,
       items: value.items.map(message => targets.has(message.metadata.name)
-        ? { ...message, status: { ...message.status, read } }
+        ? { ...message, spec: { ...message.spec, read } }
         : message),
     }))
   }, [commit])

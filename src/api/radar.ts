@@ -55,8 +55,9 @@ export interface Message {
   apiVersion: string
   kind: 'Message'
   metadata: ResourceMeta
-  spec: MessageSpec
-  status: { hydrated: boolean; read?: boolean; readAt?: string; [k: string]: unknown }
+  /** read / hydrated 都在 spec 上（能和排序键进同一条索引）；API 不返回 raw */
+  spec: MessageSpec & { read?: boolean; readAt?: string | null; hydrated?: boolean }
+  status?: Record<string, never>
 }
 
 export interface Account {
@@ -150,7 +151,7 @@ export interface LoginSession {
 export interface SourceInfo {
   name: string
   account: string
-  platform: 'zhihu' | 'twitter' | 'bilibili'
+  platform: 'zhihu' | 'twitter' | 'bilibili' | 'youtube'
   label: string
 }
 
